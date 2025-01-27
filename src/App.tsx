@@ -28,7 +28,6 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { RecordingsList } from './components/RecordingsList';
 import { FloatingActionButton } from './components/FloatingActionButton';
 import { useUserStore } from './stores/useUserStore';
-import { RevenueService } from './services/revenueService';
 
 /* --------------------------------------------------------
    A) Premium Badge below header text
@@ -326,7 +325,6 @@ export default function App() {
   useEffect(() => {
     const initialize = async () => {
       await initUser();
-      await RevenueService.initialize();
     };
     
     initialize();

@@ -217,38 +217,21 @@ export class UserTrackingService {
 
       const userRef = doc(firestore, 'users', uid);
       
-      // Get current plan before updating
-      const userDoc = await getDoc(userRef);
-      const oldPlan = userDoc.data()?.subscription?.plan || 'free';
-      
-      // Batch write to ensure both operations succeed
-      const batch = writeBatch(firestore);
-      
-      // Update user subscription
-      batch.update(userRef, {
-        'subscription.plan': plan,
-        'subscription.startDate': startDate,
-        'subscription.endDate': endDate,
-        'subscription.features': {
-          recordingMinutes: config.recordingMinutes,
-          aiChatsRemaining: config.aiChats,
-          translationEnabled: true,
-          meetingReplaysEnabled: true
+      // Update subscription directly without batch
+      await updateDoc(userRef, {
+        subscription: {
+          plan,
+          startDate,
+          endDate,
+          features: {
+            recordingMinutes: config.recordingMinutes,
+            aiChatsRemaining: config.aiChats,
+            translationEnabled: true,
+            meetingReplaysEnabled: true
+          }
         },
-        'lastUpdated': new Date()
+        lastUpdated: new Date()
       });
-
-      // Create plan change record
-      const planChangeRef = doc(collection(firestore, 'planChanges'));
-      batch.set(planChangeRef, {
-        uid,
-        oldPlan,
-        newPlan: plan,
-        timestamp: new Date()
-      });
-
-      // Commit the batch
-      await batch.commit();
 
       return {
         success: true,

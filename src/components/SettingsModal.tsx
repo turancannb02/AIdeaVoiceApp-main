@@ -237,8 +237,8 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
-  const { subscription, purchaseSubscription, restoreSubscription } = useUserStore();
-
+  const { subscription, updateSubscription } = useUserStore();
+  
   const handlePlanSelect = useCallback(
     async (planId: 'monthly' | 'sixMonth' | 'yearly') => {
       try {
@@ -255,12 +255,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               text: 'Confirm', 
               onPress: async () => {
                 try {
-                  const { success, error } = await purchaseSubscription(planId);
+                  const { success } = await updateSubscription(planId);
                   if (success) {
                     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     setShowPlanConfirmation(true);
                   } else {
-                    Alert.alert('Error', error?.message || 'Failed to update subscription');
+                    Alert.alert('Error', 'Failed to update subscription');
                   }
                 } catch (err) {
                   console.error('Error updating subscription:', err);
@@ -274,23 +274,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
         console.error('handlePlanSelect error:', error);
       }
     },
-    [purchaseSubscription]
+    [updateSubscription]
   );
-
-  // Add restore purchases button
-  const handleRestore = async () => {
-    try {
-      const { success, error } = await restoreSubscription();
-      if (success) {
-        Alert.alert('Success', 'Your purchases have been restored!');
-      } else {
-        Alert.alert('Error', error?.message || 'Failed to restore purchases');
-      }
-    } catch (error) {
-      console.error('Restore error:', error);
-      Alert.alert('Error', 'Failed to restore purchases');
-    }
-  };
 
   // Add useEffect to sync subscription when modal opens
   useEffect(() => {
@@ -452,14 +437,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                 ))}
               </LinearGradient>
             </View>
-
-            {/* Restore Purchases Button */}
-            <TouchableOpacity
-              style={styles.restoreButton}
-              onPress={handleRestore}
-            >
-              <Text style={styles.restoreButtonText}>Restore Purchases</Text>
-            </TouchableOpacity>
            
           </ScrollView>
         </SafeAreaView>
@@ -762,21 +739,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingHorizontal: 16,
     textAlign: 'center'
-  },
-
-  // Restore Purchases Button
-  restoreButton: {
-    backgroundColor: '#4B7BFF',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 20,
-    marginBottom: 32,
-    alignItems: 'center'
-  },
-  restoreButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600'
   },
 
   // Confirmation

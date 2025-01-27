@@ -6,7 +6,6 @@ import { doc, updateDoc, increment, getDoc } from 'firebase/firestore';
 import { firestore } from '../config/firebaseConfig';
 import { UserTrackingService } from '../services/userTrackingService';
 import { UserAnalytics } from '../types/user';
-import { RevenueService } from '../services/revenueService';
 
 interface Subscription {
   plan: 'free' | 'monthly' | 'sixMonth' | 'yearly';
@@ -27,53 +26,36 @@ interface UsageData {
   aiChatsUsed?: number;
 }
 
+interface AnalyticsUpdates {
+     totalRecordingMinutes?: number;
+     totalExports?: number;
+     totalShares?: number;
+     lastActiveDate?: string;
+   }
+   
+   interface UserLimitChanges {
+     recordingMinutes?: number;
+     aiChats?: number;
+   }
 interface UserState {
   uid: string | null;
-  subscription: any; // Replace with proper subscription type
-  initUser: () => Promise<void>;
-
-  // Let user change plan
-  updateSubscription: (planId: 'free' | 'monthly' | 'sixMonth' | 'yearly') => Promise<void>;
-
-  // Decrement or increment user’s subscription usage
-  updateUserLimits: (changes: { recordingMinutes?: number; aiChats?: number }) => Promise<void>;
-
-  // Provide usage-based logic for “unlimited” yearly plan
-  getUsageRemaining: () => {
-    recordingMinutes: number | 'unlimited';
-    aiChats: number | 'unlimited';
-  };
-
-  getAnalytics: () => UserAnalytics;
-  updateAnalytics: (updates: Partial<UserAnalytics>) => void;
-
-  decrementAIChat: () => Promise<{
-    success: boolean;
-    remainingChats: number | 'unlimited';
-    shouldUpgrade: boolean;
-    suggestedPlan?: 'sixMonth' | 'yearly';
-  }>;
-
-  trackUsage: (uid: string, data: UsageData) => Promise<void>;
-
+  subscription: Subscription | null;
   userCode: string | null;
+  
+  initUser: () => Promise<void>;
+  updateSubscription: (planId: 'free' | 'monthly' | 'sixMonth' | 'yearly') => Promise<{ success: boolean }>;
+  syncSubscription: () => Promise<void>;
   generateUserCode: () => Promise<string>;
-
   checkFreeTrialStatus: () => Promise<{
     isExpiring: boolean;
     daysLeft: number;
     usagePercentage: number;
   }>;
-
-  syncSubscription: () => Promise<void>;
-
-  // Add new methods for RevenueCat
-  purchaseSubscription: (planId: 'monthly' | 'sixMonth' | 'yearly') => Promise<{ success: boolean; error?: any }>;
-  restoreSubscription: () => Promise<{ success: boolean; error?: any }>;
+  // Remove RevenueCat methods
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
-  uid: null,
+     uid: null,
   subscription: null,
   userCode: null,
 
@@ -95,19 +77,18 @@ export const useUserStore = create<UserState>((set, get) => ({
         throw new Error(result.message);
       }
 
-      // Sync with Firebase after update
       await get().syncSubscription();
-
+      return { success: true };
     } catch (error) {
       console.error('updateSubscription error:', error);
-      throw error;
+      return { success: false };
     }
   },
 
   // 3) updateUserLimits
-  updateUserLimits: async (changes) => {
-    const { subscription, uid } = get();
-    if (!subscription || !uid) return;
+  updateUserLimits: async (changes: UserLimitChanges) => {
+     const { subscription, uid } = get();
+     if (!subscription || !uid) return;
 
     try {
       let newMinutes = subscription.features.recordingMinutes;
@@ -177,10 +158,9 @@ export const useUserStore = create<UserState>((set, get) => ({
     lastActiveDate: new Date().toISOString()
   }),
 
-  updateAnalytics: (updates) => {
-    // Implementation for updating analytics
-    console.log('Updating analytics:', updates);
-  },
+  updateAnalytics: (updates: AnalyticsUpdates) => {
+     console.log('Updating analytics:', updates);
+   },
 
   decrementAIChat: async () => {
     const { subscription, uid } = get();
@@ -241,13 +221,13 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
 
   trackUsage: async (uid: string, data: UsageData) => {
-    const userRef = doc(firestore, 'users', uid);
-    await updateDoc(userRef, {
-      'usageStats.totalRecordings': increment(data.recordings || 0),
-      'usageStats.totalMinutes': increment(data.minutes || 0),
-      'usageStats.totalTranscriptions': increment(data.transcriptions || 0),
-      'usageStats.totalAiChats': increment(data.aiChatsUsed || 0)
-    });
+     const userRef = doc(firestore, 'users', uid);
+     await updateDoc(userRef, {
+       'usageStats.totalRecordings': increment(data.recordings || 0),
+       'usageStats.totalMinutes': increment(data.minutes || 0),
+       'usageStats.totalTranscriptions': increment(data.transcriptions || 0),
+       'usageStats.totalAiChats': increment(data.aiChatsUsed || 0)
+     });
   },
 
   generateUserCode: async () => {
@@ -323,37 +303,6 @@ export const useUserStore = create<UserState>((set, get) => ({
       }
     } catch (error) {
       console.error('Error syncing subscription:', error);
-    }
-  },
-
-  // Add new methods for RevenueCat
-  purchaseSubscription: async (planId: 'monthly' | 'sixMonth' | 'yearly') => {
-    try {
-      const { success, customerInfo } = await RevenueService.purchasePackage({ identifier: planId });
-      
-      if (success) {
-        // Update local subscription state
-        await get().syncSubscription();
-        return { success: true };
-      }
-      return { success: false, error: 'Purchase failed' };
-    } catch (error) {
-      console.error('Purchase error:', error);
-      return { success: false, error };
-    }
-  },
-
-  restoreSubscription: async () => {
-    try {
-      const { success, customerInfo } = await RevenueService.restorePurchases();
-      if (success) {
-        await get().syncSubscription();
-        return { success: true };
-      }
-      return { success: false };
-    } catch (error) {
-      console.error('Restore error:', error);
-      return { success: false, error };
     }
   }
 }));
