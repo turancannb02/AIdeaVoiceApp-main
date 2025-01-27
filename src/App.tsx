@@ -28,6 +28,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { RecordingsList } from './components/RecordingsList';
 import { FloatingActionButton } from './components/FloatingActionButton';
 import { useUserStore } from './stores/useUserStore';
+import { AnalyticsService } from './services/analyticsService';
 
 /* --------------------------------------------------------
    A) Premium Badge below header text
@@ -90,6 +91,8 @@ const PremiumBadge = () => {
 function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { uid } = useUserStore();
   const { recordings, selectedFilter, setSelectedFilter, selectedRecording, setSelectedRecording, refreshRecordings, loadRecordings } = useRecordingStore();
   const { syncSubscription } = useUserStore();
 
@@ -137,6 +140,27 @@ function AppContent() {
       setRefreshing(false);
     }
   }, [refreshRecordings, syncSubscription]);
+
+  // Track session
+  useEffect(() => {
+    let startTime = Date.now();
+    
+    const trackSession = async () => {
+      if (uid) {
+        const sid = await AnalyticsService.trackSessionStart(uid);
+        setSessionId(sid);
+      }
+    };
+    
+    trackSession();
+
+    return () => {
+      if (sessionId && uid) {
+        const duration = Date.now() - startTime;
+        AnalyticsService.trackSessionEnd(sessionId, duration);
+      }
+    };
+  }, [uid]);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;

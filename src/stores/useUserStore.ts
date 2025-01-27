@@ -40,6 +40,12 @@ interface AnalyticsUpdates {
 interface UserState {
   uid: string | null;
   subscription: Subscription | null;
+  decrementAIChat: () => Promise<{
+    success: boolean;
+    remainingChats: number | 'unlimited';
+    shouldUpgrade: boolean;
+    suggestedPlan?: 'monthly' | 'sixMonth' | 'yearly';
+  }>;
   userCode: string | null;
   
   initUser: () => Promise<void>;
