@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "plugins": [
+      [
+        "expo-file-system",
+        {
+          "filePermission": "read-write"
+        }
+      ]
+    ],
+    "newArchEnabled": true,
+    "name": "AIdeaVoice",
+    "version": "1.0.0",
+    "extra": {
+      "firebase": {
+        "apiKey": "YOUR_API_KEY",
+        "authDomain": "YOUR_AUTH_DOMAIN",
+        "projectId": "YOUR_PROJECT_ID",
+        "storageBucket": "YOUR_STORAGE_BUCKET",
+        "messagingSenderId": "YOUR_MESSAGING_SENDER_ID",
+        "appId": "YOUR_APP_ID",
+        "measurementId": "YOUR_MEASUREMENT_ID"
+      },
+      "eas": {
+        "projectId": "45ec7bc8-9322-483c-8389-efb882ddc8c6"
+      }
+    },
+    "owner": "thomyorke34",
+    "ios": {
+      "bundleIdentifier": "com.thomyorke34.aideavoice"
+    }
+  }
+}
