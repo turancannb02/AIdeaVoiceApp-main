@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -24,22 +24,26 @@ import Slider from '@react-native-community/slider';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Calendar from 'expo-calendar';
 
-import { useUserStore } from '../stores/useUserStore';
-import { AnalyticsService } from '../services/analyticsService';
-import { generateAIResponse } from '../services/aiChatService';
-import { translateText } from '../services/translationService';
-import { analyzeTranscription } from '../services/openaiService';
 import { Recording } from '../types/recording';
+import { useRecordingStore } from '../stores/useRecordingStore';
+import { useUserStore } from '../stores/useUserStore';
+import { translateText } from '../services/translationService';
+import { generateAIResponse } from '../services/aiChatService';
+import { analyzeTranscription } from '../services/openaiService';
+
 import { ChatBubble } from './ChatBubble';
 import MeetingReplay, { Speaker } from './MeetingReplay';
-import { AnalysisResponse } from '../types/analysis';
-import { FeatureName } from '../types/analytics'; // Changed this line
+
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
+// import { parseSpeakers } from '../utils/meetingParser'; // <-- We won't rely on parseSpeakers anymore
+
+import type { AnalysisResponse } from '../types/analysis';
 
 interface SectionProps {
   title: string;
   children: React.ReactNode;
 }
-
+/** Props for this modal */
 interface Props {
   recording: Recording;
   visible: boolean;
@@ -47,6 +51,7 @@ interface Props {
   showSubscriptionModal?: (plan: 'monthly' | 'sixMonth' | 'yearly') => void;
 }
 
+/** Chat message shape */
 interface ChatMessage {
   speaker: string;
   message: string;
@@ -54,8 +59,10 @@ interface ChatMessage {
   avatarIndex: number;
 }
 
+/** Tab definitions */
 type ActiveTab = 'aidea' | 'transcribed' | 'ai' | 'meeting';
 
+/** Preset categories for quick selection */
 const PRESET_CATEGORIES = [
   { id: 'meeting', color: '#4CAF50', icon: 'people' as const },
   { id: 'note', color: '#2196F3', icon: 'document-text' as const },
@@ -67,6 +74,7 @@ const PRESET_CATEGORIES = [
   { id: 'study', color: '#009688', icon: 'school' as const },
 ];
 
+/** Language list for translations */
 const LANGUAGES = [
   { code: 'tr', name: 'Turkish', flag: '🇹🇷' },
   { code: 'es', name: 'Spanish', flag: '🇪🇸' },
@@ -79,6 +87,7 @@ const LANGUAGES = [
   { code: 'ko', name: 'Korean', flag: '🇰🇷' },
 ];
 
+/** Translate button for transcribed tab */
 const TranslateButton = ({ onPress }: { onPress: () => void }) => (
   <TouchableOpacity style={styles.translateButton} onPress={onPress}>
     <View style={styles.translateButtonContent}>
@@ -88,18 +97,25 @@ const TranslateButton = ({ onPress }: { onPress: () => void }) => (
   </TouchableOpacity>
 );
 
+/** Main component */
 export const RecordingDetailModal: React.FC<Props> = ({
   recording,
   visible,
   onClose,
-  showSubscriptionModal
+  showSubscriptionModal // Ensure this is destructured
 }) => {
-  const { uid, decrementAIChat } = useUserStore((state) => ({
-    uid: state.uid,
-    decrementAIChat: state.decrementAIChat
-  }));
+  // Tabs & category
   const [activeTab, setActiveTab] = useState<ActiveTab>('aidea');
-  const [selectedCategory, setSelectedCategory] = useState(recording?.categories?.[0] || 'note');
+  const [selectedCategory, setSelectedCategory] = useState(
+    recording?.categories?.[0] || 'note'
+  );
+
+  const handleShowSubscription = (plan: 'monthly' | 'sixMonth' | 'yearly') => {
+    if (showSubscriptionModal) {
+      showSubscriptionModal(plan);
+    }
+  };
+  // Translation
   const [showTranslation, setShowTranslation] = useState(false);
   const [translatedText, setTranslatedText] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<null | {
@@ -107,46 +123,201 @@ export const RecordingDetailModal: React.FC<Props> = ({
     name: string;
     flag: string;
   }>(null);
+
+  // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Meeting
   const [meetingMessages, setMeetingMessages] = useState<Speaker[]>([]);
+
+  // State for AI analysis, topics, date mentions, etc.
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [topicDetails, setTopicDetails] = useState<TopicDetail[]>([]);
   const [dateMentions, setDateMentions] = useState<DateMention[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // For sharing/export
   const [showShareMenu, setShowShareMenu] = useState(false);
 
-  const handleShare = async () => {
-    try {
-      const result = await Share.share({
-        message: recording.transcription || 'No transcription available',
+  // get user data
+  const { subscription } = useUserStore();
+  const updateRecordingCategory = useRecordingStore(
+    (state) => state.updateRecordingCategory
+  );
+  const { recordingDuration } = useAudioRecorder();
+  const { updateRecordingAnalysis } = useRecordingStore();
+
+  useEffect(() => {
+    if (!recording?.transcription) return;
+    
+    // If we already have analysis, use that
+    if (recording.analysis) {
+      setAnalysis(recording.analysis);
+      // Convert topics and other data
+      const newTopicDetails = recording.analysis.topics.map((topic, index) => {
+        const totalDuration = recording.duration || 0;
+        const segmentDuration = totalDuration / (recording.analysis?.topics.length || 1);
+        const timeStart = index * segmentDuration;
+        const timeEnd = (index + 1) * segmentDuration;
+  
+        return {
+          title: topic.title || 'Untitled Topic',
+          timeRange: `${formatTimestamp(timeStart)}-${formatTimestamp(timeEnd)}`,
+          summary: topic.summary || '',
+          bulletPoints: topic.bulletPoints.map((point) => ({
+            type: identifyPointType(point),
+            content: point
+          })),
+          timeStart,
+          timeEnd
+        };
       });
-      if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          console.log('Shared with activity type: ' + result.activityType);
-        } else {
-          console.log('Shared');
-        }
-      } else if (result.action === Share.dismissedAction) {
-        console.log('Dismissed');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to share the recording');
+      setTopicDetails(newTopicDetails);
+      setIsAnalyzing(false);
+      return;
     }
+  
+    const analyzeContent = async () => {
+      try {
+        setIsAnalyzing(true);
+
+        if (!recording?.transcription || recording.transcription.trim().length === 0) {
+          const emptyAnalysis: AnalysisResponse = {
+            summary: "No valid voice recording found 🙁 Please record a new one 🎤",
+            keyPoints: [],
+            topics: [],
+            isMeeting: false,
+            speakers: [],
+            rawTranscription: ""
+          };
+          setAnalysis(emptyAnalysis);
+          setTopicDetails([]);
+          return;
+        }
+
+        const result = await analyzeTranscription(recording.transcription);
+        
+        // Create a default topic if none are identified
+        if (!result || !Array.isArray(result.topics) || result.topics.length === 0) {
+          const defaultTopic = {
+            title: 'General Content',
+            summary: result?.summary || 'Content analysis available below',
+            bulletPoints: result?.keyPoints || ['No specific points identified']
+          };
+
+          result.topics = [defaultTopic as any];
+        }
+
+        // Create properly typed analysis result
+        const typedAnalysis: AnalysisResponse = {
+          summary: result.summary || 'Analysis completed',
+          keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : [],
+          topics: result.topics.map(topic => ({
+            title: (topic as any)?.title || 'General Content',
+            summary: (topic as any)?.summary || result.summary || 'Content analysis',
+            bulletPoints: Array.isArray((topic as any)?.bulletPoints) ? (topic as any).bulletPoints : []
+          })),
+          isMeeting: Boolean(result.isMeeting || false),
+          speakers: result.speakers || [],
+          rawTranscription: recording.transcription
+        };
+
+        // Update recording store with analysis
+        await updateRecordingAnalysis(recording.id, typedAnalysis);
+        setAnalysis(typedAnalysis);
+
+        // Create timeline with default segmentation
+        const totalDuration = recording.duration || 0;
+        const segmentDuration = totalDuration / typedAnalysis.topics.length;
+
+        const newTopicDetails = typedAnalysis.topics.map((topic, idx) => {
+          const timeStart = idx * segmentDuration;
+          const timeEnd = (idx + 1) * segmentDuration;
+
+          return {
+            title: topic.title,
+            timeRange: `${formatTimestamp(timeStart)}-${formatTimestamp(timeEnd)}`,
+            summary: topic.summary,
+            bulletPoints: (topic.bulletPoints || []).map(point => ({
+              type: identifyPointType(point),
+              content: point
+            })),
+            timeStart,
+            timeEnd
+          };
+        });
+
+        setTopicDetails(newTopicDetails);
+      } catch (err) {
+        console.warn('Analysis warning:', err);
+        // Create fallback analysis instead of throwing error
+        const fallbackAnalysis: AnalysisResponse = {
+          summary: recording.transcription?.substring(0, 200) + "...",
+          keyPoints: [],
+          topics: [{
+            title: 'Voice Recording',
+            summary: 'Your recording has been transcribed below',
+            bulletPoints: []
+          }],
+          isMeeting: false,
+          speakers: [],
+          rawTranscription: recording.transcription || ""
+        };
+        setAnalysis(fallbackAnalysis);
+        setTopicDetails([{
+          title: 'Voice Recording',
+          timeRange: `0:00-${formatTimestamp(recording.duration || 0)}`,
+          summary: 'Your recording has been transcribed below',
+          bulletPoints: [],
+          timeStart: 0,
+          timeEnd: recording.duration || 0
+        }]);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    };
+  
+    if (!recording.analysis) {
+      analyzeContent();
+    }
+  }, [recording?.id, recording?.transcription, recording?.analysis]);
+
+  // 2) If user goes to AI tab and we have no chat messages, show intro
+  useEffect(() => {
+    if (recording?.transcription && activeTab === 'ai' && chatMessages.length === 0) {
+      setChatMessages([
+        {
+          speaker: 'AI Assistant',
+          message: `Hi! I've analyzed your recording "${recording.title}". How can I help?`,
+          timestamp: new Date().toLocaleTimeString(),
+          avatarIndex: 0
+        }
+      ]);
+    }
+  }, [activeTab, recording?.transcription, chatMessages.length, recording?.title]);
+
+  // remove second parseSpeakers approach so we do NOT overwrite meetingMessages
+  // 3) Category updates
+  const handleCategoryChange = (newCat: string) => {
+    setSelectedCategory(newCat);
+    updateRecordingCategory(recording.id, newCat);
   };
 
+  // 4) Chat send
   const handleSendChatMessage = async () => {
     if (!chatInput.trim() || isChatLoading) return;
     
-    const startTime = Date.now();
     try {
       setIsChatLoading(true);
   
-      const { success, remainingChats, shouldUpgrade, suggestedPlan } = await decrementAIChat();
+      // Check AI chat usage first
+      const { success, remainingChats, shouldUpgrade, suggestedPlan } = await useUserStore.getState().decrementAIChat();
       
       if (!success) {
+        // Show upgrade modal
         Alert.alert(
           'AI Chat Limit Reached',
           suggestedPlan === 'yearly' 
@@ -156,13 +327,14 @@ export const RecordingDetailModal: React.FC<Props> = ({
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'View Plans',
-              onPress: () => showSubscriptionModal && showSubscriptionModal(suggestedPlan || 'monthly')
+              onPress: () => handleShowSubscription(suggestedPlan || 'monthly')
             }
           ]
         );
         return;
       }
-
+  
+      // Add user message
       const userMsg: ChatMessage = {
         speaker: 'You',
         message: chatInput.trim(),
@@ -172,6 +344,7 @@ export const RecordingDetailModal: React.FC<Props> = ({
       setChatMessages(prev => [...prev, userMsg]);
       setChatInput('');
   
+      // Get AI response
       const aiResponse = await generateAIResponse(chatInput, recording.transcription || '');
       const aiMsg: ChatMessage = {
         speaker: 'AI Assistant',
@@ -181,6 +354,7 @@ export const RecordingDetailModal: React.FC<Props> = ({
       };
       setChatMessages(prev => [...prev, aiMsg]);
   
+      // Show remaining chats notification if running low
       if (shouldUpgrade && remainingChats !== 'unlimited') {
         Alert.alert(
           'Running Low on AI Chats',
@@ -189,40 +363,578 @@ export const RecordingDetailModal: React.FC<Props> = ({
             { text: 'Later', style: 'cancel' },
             {
               text: 'View Plans',
-              onPress: () => showSubscriptionModal && showSubscriptionModal(suggestedPlan || 'monthly')
+              onPress: () => handleShowSubscription(suggestedPlan || 'monthly')
             }
           ]
         );
       }
-
-      if (uid) {
-        AnalyticsService.trackFeatureUse(uid, 'aiChat', {
-          messageLength: chatInput.length,
-          duration: Date.now() - startTime
-        });
-      }
     } catch (err) {
       Alert.alert('AI Chat Error', 'Failed to get AI response');
-      if (uid) {
-        AnalyticsService.trackError(uid, err as Error, {
-          feature: 'aiChat',
-          recordingId: recording?.id
-        });
-      }
     } finally {
       setIsChatLoading(false);
     }
   };
 
-  const handleChangeTab = useCallback((tab: ActiveTab) => {
-    if (uid) {
-      AnalyticsService.trackFeatureUse(uid, tab as FeatureName, {
-        recordingId: recording?.id,
-        recordingDuration: recording?.duration
-      });
+  // 5) Tab content
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'aidea':
+        return renderAIdeaTab();
+      case 'transcribed':
+        return renderTranscribedTab();
+      case 'ai':
+        return renderAITab();
+      case 'meeting':
+        return renderMeetingTab();
+      default:
+        return null;
     }
+  };
+
+  // 5a) AIdea tab => summary, key points, topics
+  const renderAIdeaTab = () => (
+    <ScrollView style={styles.tabContent}>
+      {isAnalyzing ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4B7BFF" />
+          <Text style={styles.loadingText}>Analyzing your recording... ✨</Text>
+          <Text style={styles.loadingSubtext}>
+            Extracting topics and insights 🎯
+          </Text>
+        </View>
+      ) : (
+        <>
+          {/* Summary Section */}
+          <View style={styles.transcribedCard}>
+            <Text style={styles.sectionLabel}>Summary 💡</Text>
+            <Text style={styles.transcribedText}>
+              {analysis?.summary || 'No summary available'}
+            </Text>
+          </View>
+
+          {/* Key Points Section */}
+          <View style={styles.transcribedCard}>
+            <Text style={styles.sectionLabel}>Key Points 🎯</Text>
+            {analysis?.keyPoints?.length ? (
+              analysis.keyPoints.map((kp, idx) => (
+                <View key={idx} style={styles.keyPointContainer}>
+                  <Text style={styles.keyPointBullet}>•</Text>
+                  <Text style={styles.transcribedText}>{kp}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.transcribedText}>No key points identified</Text>
+            )}
+          </View>
+
+          {/* Topics Timeline Section */}
+          <View style={styles.transcribedCard}>
+            <Text style={styles.sectionLabel}>Topics Timeline ⏱</Text>
+            {topicDetails.length > 0 ? (
+              renderTopicTimeline()
+            ) : (
+              <Text style={styles.transcribedText}>
+                No topics identified. Please try analyzing again.
+              </Text>
+            )}
+          </View>
+        </>
+      )}
+    </ScrollView>
+  );
+
+  // 5b) Transcribed tab => original text & translation
+  const renderTranscribedTab = () => (
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.categoryEditBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {PRESET_CATEGORIES.map((cat) => {
+            const isActive = cat.id === selectedCategory;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryItem,
+                  isActive && { backgroundColor: cat.color }
+                ]}
+                onPress={() => handleCategoryChange(cat.id)}
+              >
+                <Ionicons
+                  name={cat.icon}
+                  size={18}
+                  color={isActive ? '#fff' : cat.color}
+                />
+                <Text
+                  style={[
+                    styles.categoryItemText,
+                    isActive && { color: '#fff' }
+                  ]}
+                >
+                  {cat.id.charAt(0).toUpperCase() + cat.id.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* The transcription text */}
+      <View style={styles.transcribedCard}>
+        <Text style={styles.sectionLabel}>Transcribed</Text>
+        <TranslateButton onPress={handleTranslate} />
+        <Text style={styles.transcribedText}>
+          {recording?.transcription || 'No transcription available.'}
+        </Text>
+        {renderTranslation()}
+      </View>
+    </ScrollView>
+  );
+
+  // Add KeyboardAvoidingView and update the chat UI layout
+  const renderAITab = () => (
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.tabContent}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <ScrollView 
+        style={styles.chatScroll}
+        ref={scrollViewRef}
+        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+      >
+        {chatMessages.length === 0 ? (
+          <View style={styles.emptyChatContainer}>
+            <Text style={styles.emptyChatTitle}>Ask me about the recording! 💡</Text>
+            <Text style={styles.emptyChatSubtitle}>
+              I can help you understand the content, summarize key points, or answer specific questions.
+            </Text>
+          </View>
+        ) : (
+          chatMessages.map((msg, idx) => (
+            <ChatBubble
+              key={idx}
+              message={msg.message}
+              timestamp={msg.timestamp}
+              speaker={msg.speaker}
+              isUser={msg.speaker === 'You'}
+              avatarIndex={msg.avatarIndex}
+            />
+          ))
+        )}
+      </ScrollView>
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.chatInput}
+          placeholder="Ask about the recording..."
+          placeholderTextColor="#999"
+          value={chatInput}
+          onChangeText={setChatInput}
+          multiline
+          maxLength={200}
+          returnKeyType="send"
+          onSubmitEditing={handleSendChatMessage}
+        />
+        <TouchableOpacity
+          style={[
+            styles.chatSendButton,
+            (!chatInput.trim() || isChatLoading) && styles.chatSendButtonDisabled
+          ]}
+          onPress={handleSendChatMessage}
+          disabled={!chatInput.trim() || isChatLoading}
+        >
+          {isChatLoading ? (
+            <ActivityIndicator size="small" color="#4B7BFF" />
+          ) : (
+            <Ionicons name="send" size={22} color="#4B7BFF" />
+          )}
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+
+  // 5d) Meeting replay tab
+  const renderMeetingTab = () => (
+    <View style={[styles.tabContent, { padding: 16 }]}>
+      {isAnalyzing ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4B7BFF" />
+          <Text style={styles.loadingText}>Analyzing conversation... ✨</Text>
+          <Text style={styles.loadingSubtext}>Identifying speakers 🎯</Text>
+        </View>
+      ) : (
+        <ScrollView style={styles.chatScroll} showsVerticalScrollIndicator={false}>
+          {meetingMessages.length > 0 ? (
+            <MeetingReplay speakers={meetingMessages} />
+          ) : (
+            <View style={styles.emptyMeeting}>
+              <Text style={styles.noChatText}>No conversation detected 💭</Text>
+              <Text style={styles.noChatSubtext}>
+                Record a conversation to see it here
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+    </View>
+  );
+
+  // Update the topics timeline rendering
+  const renderTopicTimeline = () => (
+    <View style={styles.topicTimeline}>
+      {topicDetails.map((topic, idx) => (
+        <View key={idx} style={styles.topicSection}>
+          {/* Topic Header with Time */}
+          <Text style={styles.topicTitle}>
+            {topic.title} ({topic.timeRange})
+          </Text>
+
+          {/* Topic Summary */}
+          <Text style={styles.summaryText}>
+            {topic.summary}
+          </Text>
+
+          {/* Single Bullet Points List */}
+          {topic.bulletPoints.length > 0 && (
+            <View style={styles.bulletPointsContainer}>
+              {topic.bulletPoints.map((point, pidx) => (
+                <View key={pidx} style={styles.bulletPointItem}>
+                  <Text style={styles.bulletIcon}>•</Text>
+                  <Text style={styles.bulletText}>
+                    {typeof point === 'string' ? point : point.content}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+
+  // Helper function to get appropriate emoji for topic
+  const getTopicEmoji = (title: string): string => {
+    const lower = title.toLowerCase();
+    if (lower.includes('introduction')) return '👋';
+    if (lower.includes('summary')) return '📊';
+    if (lower.includes('conclusion')) return '🎯';
+    if (lower.includes('discussion')) return '💭';
+    if (lower.includes('problem')) return '❗';
+    if (lower.includes('solution')) return '💡';
+    if (lower.includes('plan')) return '📅';
+    if (lower.includes('review')) return '📋';
+    if (lower.includes('analysis')) return '🔍';
+    return '📌';
+  };
+
+  // Helper function to get improved bullet point icons
+  const getBulletIcon = (type: 'decision' | 'action' | 'reference' | 'default'): string => {
+    switch (type) {
+      case 'decision':
+        return '✅'; // Decision made
+      case 'action':
+        return '⚡'; // Action item
+      case 'reference':
+        return '🔗'; // Reference/Link
+      default:
+        return '•';
+    }
+  };
+
+  // Helper function for bullet point icons
+  const getBulletPointIcon = (type: 'decision' | 'action' | 'reference' | 'default'): string => {
+    switch (type) {
+      case 'decision':
+        return '✅'; // Decisions/agreements
+      case 'action':
+        return '⚡'; // Action items
+      case 'reference':
+        return '📎'; // References/links
+      default:
+        return '•';
+    }
+  };
+
+  // 6) For translations
+  const handleTranslate = () => {
+    if (!recording?.transcription) return;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: [...LANGUAGES.map((lang) => `${lang.flag} ${lang.name}`), 'Cancel'],
+          cancelButtonIndex: LANGUAGES.length
+        },
+        async (buttonIndex) => {
+          if (buttonIndex < LANGUAGES.length) {
+            const language = LANGUAGES[buttonIndex];
+            setSelectedLanguage(language);
+            try {
+              const translated = await translateText(recording.transcription || '', language.code);
+              setTranslatedText(translated);
+              setShowTranslation(true);
+            } catch (err) {
+              Alert.alert('Translation Error', 'Failed to translate text');
+            }
+          }
+        }
+      );
+    } else {
+      // Android
+      Alert.alert('Select Language', 'Choose a language:', [
+        ...LANGUAGES.map((lang) => ({
+          text: `${lang.flag} ${lang.name}`,
+          onPress: async () => {
+            setSelectedLanguage(lang);
+            try {
+              const translated = await translateText(
+                recording.transcription || '',
+                lang.code
+              );
+              setTranslatedText(translated);
+              setShowTranslation(true);
+            } catch (error) {
+              Alert.alert('Translation Error', 'Failed to translate text');
+            }
+          }
+        })),
+        { text: 'Cancel', style: 'cancel' }
+      ]);
+    }
+  };
+
+  const renderTranslation = () => {
+    if (!showTranslation || !selectedLanguage) return null;
+    return (
+      <View style={styles.translationWrapper}>
+        <View style={styles.translationHeader}>
+          <View style={styles.translationTitleContainer}>
+            <Text style={styles.translationFlag}>{selectedLanguage.flag}</Text>
+            <Text style={styles.translationTitle}>{selectedLanguage.name}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setShowTranslation(false)}
+            style={styles.closeTranslationButton}
+          >
+            <Ionicons name="close-circle" size={24} color="#666" />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={styles.translatedTextContainer}>
+          <Text style={styles.translatedText}>{translatedText}</Text>
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // 7) Calendar helper for date mentions (if you’re actually using dateMentions)
+  const handleAddToCalendar = async (dateMention: DateMention) => {
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status === 'granted') {
+        const defaultCalendar = await Calendar.getDefaultCalendarAsync();
+        await Calendar.createEventAsync(defaultCalendar.id, {
+          title: recording?.title || 'Meeting from AIdeaVoice',
+          startDate: dateMention.date,
+          endDate: new Date(dateMention.date.getTime() + 60 * 60 * 1000),
+          notes: recording?.transcription
+        });
+        Alert.alert('Success', 'Event added to calendar');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add event to calendar');
+    }
+  };
+
+  // 8) Share & export
+  const handleShare = () => {
+    if (!recording) return;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'Share & export notes with a tap',
+          options: [
+            'Cancel',
+            'Export to PDF',
+            'Email Notes',
+            'Share Transcript',
+            'Share Audio File'
+          ],
+          cancelButtonIndex: 0
+        },
+        async (buttonIndex) => {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          switch (buttonIndex) {
+            case 1:
+              handleShareType('pdf');
+              break;
+            case 2:
+              handleShareType('email');
+              break;
+            case 3:
+              handleShareType('transcript');
+              break;
+            case 4:
+              handleShareType('audio');
+              break;
+          }
+        }
+      );
+    } else {
+      setShowShareMenu(true);
+    }
+  };
+
+  const handleShareType = async (type: 'pdf' | 'email' | 'transcript' | 'audio') => {
+    setShowShareMenu(false);
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  
+      switch (type) {
+        case 'pdf':
+          await handleExportPDF();
+          break;
+        case 'email': {
+          const content = `${recording.title}\n${recording.transcription || ''}\n\nAI Analysis:\n${generateSummary(recording.transcription || '')}`;
+          await Share.share({ message: content, title: recording.title });
+          break;
+        }
+        case 'transcript':
+          await Share.share({
+            message: recording.transcription || '',
+            title: 'Transcript'
+          });
+          break;
+        case 'audio':
+          if (Platform.OS === 'ios') {
+            await Share.share({ url: recording.uri });
+          } else {
+            await Sharing.shareAsync(recording.uri);
+          }
+          break;
+      }
+    } catch (err) {
+      console.error('Share error:', err);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      const htmlContent = await generatePDF();
+      const { uri } = await Print.printToFileAsync({ 
+        html: htmlContent,
+        base64: false 
+      });
+      
+      if (Platform.OS === 'ios') {
+        await Sharing.shareAsync(uri, { 
+          UTI: '.pdf', 
+          mimeType: 'application/pdf' 
+        });
+      } else {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf' 
+        });
+      }
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      Alert.alert('Error', 'Failed to generate PDF');
+    }
+  };
+
+  const generatePDF = async (): Promise<string> => {
+    const exportDate = new Date().toLocaleDateString();
+    const recordingDate = new Date(recording?.timestamp || '').toLocaleDateString();
+    const recordingLength = formatDuration(recording?.duration || 0);
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+            .header { text-align: center; margin-bottom: 40px; }
+            .app-name { font-size: 28px; color: #4B7BFF; margin-bottom: 10px; }
+            .divider { border-bottom: 1px solid #E0E0E0; margin: 20px 0; }
+            .info-row { display: flex; justify-content: space-between; margin: 20px 0; color: #666; }
+            .info-label { font-weight: bold; }
+            .section { margin: 30px 0; }
+            .section-title { color: #4B7BFF; font-size: 20px; margin-bottom: 15px; }
+            .content { line-height: 1.6; }
+            .footer { text-align: center; margin-top: 50px; color: #666; font-size: 12px; }
+            .footer-brand { color: #4B7BFF; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <!-- App Header -->
+          <div class="header">
+            <div class="app-name">AIdeaVoice 🎙️</div>
+          </div>
+          <div class="divider"></div>
+
+          <!-- Recording Info -->
+          <h1>${recording?.title || 'Untitled Recording'}</h1>
+          <div class="info-row">
+            <div>
+              <span class="info-label">Recorded Date:</span> ${recordingDate}
+            </div>
+            <div>
+              <span class="info-label">Length:</span> ${recordingLength}
+            </div>
+          </div>
+
+          <!-- Transcribed Section -->
+          <div class="section">
+            <h2 class="section-title">Transcribed</h2>
+            <div class="content">
+              ${recording?.transcription || 'No transcription available.'}
+            </div>
+          </div>
+
+          <!-- Categories if available -->
+          ${recording?.categories && recording.categories.length > 0 ? `
+            <div class="section">
+              <h2 class="section-title">Categories</h2>
+              <div class="content">
+                ${recording.categories.join(', ')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Footer -->
+          <div class="footer">
+            <p>Generated with <span class="footer-brand">AIdeaVoice</span> - Your AI Voice Assistant</p>
+            <p>Export Date: ${exportDate}</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ 
+        html: htmlContent, 
+        base64: false 
+      });
+      
+      if (Platform.OS === 'ios') {
+        await Sharing.shareAsync(uri, { 
+          UTI: '.pdf', 
+          mimeType: 'application/pdf' 
+        });
+      } else {
+        await Sharing.shareAsync(uri, { 
+          mimeType: 'application/pdf' 
+        });
+      }
+      return htmlContent;
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      Alert.alert('Error', 'Failed to generate PDF');
+      return '';
+    }
+  };
+
+  // 9) Tab navigation
+  const handleChangeTab = (tab: ActiveTab) => {
     setActiveTab(tab);
-  }, [uid, recording]);
+  };
 
   const renderTabs = () => (
     <View style={styles.tabBar}>
@@ -245,21 +957,6 @@ export const RecordingDetailModal: React.FC<Props> = ({
       ))}
     </View>
   );
-
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'aidea':
-        return <Text>AIdea Content</Text>;
-      case 'transcribed':
-        return <Text>Transcribed Content</Text>;
-      case 'ai':
-        return <Text>AI Assistant Content</Text>;
-      case 'meeting':
-        return <Text>Meeting Replay Content</Text>;
-      default:
-        return null;
-    }
-  };
 
   // If no recording or modal not visible
   if (!recording) return null;
