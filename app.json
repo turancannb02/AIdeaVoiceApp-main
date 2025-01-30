@@ -1,16 +1,11 @@
 {
   "expo": {
-    "plugins": [
-      [
-        "expo-file-system",
-        {
-          "filePermission": "read-write"
-        }
-      ]
-    ],
-    "newArchEnabled": true,
     "name": "AIdeaVoice",
+    "slug": "aideavoice",
     "version": "1.0.0",
+    "icon": "./assets/aideavoiceapp-icon.png",
+    "userInterfaceStyle": "automatic",
+    "owner": "thomyorke34",
     "extra": {
       "firebase": {
         "apiKey": "YOUR_API_KEY",
@@ -25,9 +20,38 @@
         "projectId": "45ec7bc8-9322-483c-8389-efb882ddc8c6"
       }
     },
-    "owner": "thomyorke34",
     "ios": {
-      "bundleIdentifier": "com.thomyorke34.aideavoice"
-    }
+      "bundleIdentifier": "com.thomyorke34.aideavoice",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app requires access to the microphone to record audio.",
+        "NSLocationWhenInUseUsageDescription": "This app requires access to your location for better functionality.",
+        "NSLocationAlwaysUsageDescription": "This app requires background location access to improve the user experience."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/aideavoiceapp-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.thomyorke34.aideavoice"
+    },
+    "plugins": [
+      [
+        "expo-file-system",
+        {
+          "filePermission": "read-write"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ],
+    "newArchEnabled": true
   }
 }

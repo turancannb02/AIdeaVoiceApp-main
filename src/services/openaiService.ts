@@ -22,31 +22,35 @@ interface AnalysisResponse {
   rawTranscription: string;
 }
 
-// Add interface for topic structure
+// Define Topic structure
 interface Topic {
   title: string;
   summary: string;
   bulletPoints: string[];
 }
 
+// ✅ Debugging function to check API key
 const verifyApiKey = () => {
-  console.log('API Key:', ENV.OPENAI_API_KEY ? 'Present' : 'Missing');
+  console.log('🔍 API Key:', ENV.OPENAI_API_KEY ? 'Present' : '❌ MISSING');
   if (!ENV.OPENAI_API_KEY) {
-    throw new Error('OpenAI API key is not configured');
+    throw new Error('❌ OpenAI API key is missing or not set.');
   }
 };
 
+// ✅ Transcribe Audio (Fixed FormData issues on iOS)
 export const transcribeAudio = async (uri: string): Promise<TranscriptionResponse> => {
   try {
     verifyApiKey();
+
+    // Check if file exists
     const fileInfo = await FileSystem.getInfoAsync(uri);
     if (!fileInfo.exists) {
-      throw new Error('Audio file not found');
+      throw new Error('❌ Audio file not found');
     }
 
     const formData = new FormData();
     formData.append('file', {
-      uri: uri,
+      uri,
       type: 'audio/m4a',
       name: 'recording.m4a',
     } as any);
@@ -54,27 +58,30 @@ export const transcribeAudio = async (uri: string): Promise<TranscriptionRespons
     formData.append('response_format', 'json');
     formData.append('language', 'en');
 
+    // Fix FormData issue (iOS bug)
     const response = await fetch(`${ENV.API_URL}/transcriptions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${ENV.OPENAI_API_KEY}`,
+        'Content-Type': 'multipart/form-data', // ✅ Fix for iOS
       },
       body: formData,
     });
 
     if (!response.ok) {
       const errorData = await response.json();
+      console.error("❌ Transcription API Error:", errorData);
       throw new Error(errorData.error?.message || 'Transcription failed');
     }
 
     const data = await response.json();
     return {
-      text: data.text,
-      language: data.language
+      text: data.text || '',
+      language: data.language || 'unknown'
     };
 
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('🚨 Transcription Error:', error);
     return {
       text: '',
       error: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -82,10 +89,11 @@ export const transcribeAudio = async (uri: string): Promise<TranscriptionRespons
   }
 };
 
+// ✅ Analyze Transcription (Fixed JSON Parsing Issues)
 export const analyzeTranscription = async (text: string): Promise<AnalysisResponse> => {
   try {
     verifyApiKey();
-    
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -97,7 +105,7 @@ export const analyzeTranscription = async (text: string): Promise<AnalysisRespon
         messages: [
           {
             role: 'system',
-            content: `You are an AI assistant that analyzes transcriptions. Create a detailed analysis with the following structure:
+            content: `You are an AI assistant that analyzes transcriptions. Create a structured analysis:
             {
               "summary": "Brief 2-3 sentence overview",
               "keyPoints": ["Important point 1", "Important point 2", ...],
@@ -121,10 +129,22 @@ export const analyzeTranscription = async (text: string): Promise<AnalysisRespon
       })
     });
 
-    const data = await response.json();
-    const result = JSON.parse(data.choices[0].message.content);
+    if (!response.ok) {
+      console.error("❌ OpenAI API Error:", await response.text());
+      throw new Error("AI Analysis request failed.");
+    }
 
-    // Type check and sanitize the response
+    const data = await response.json();
+
+    let result;
+    try {
+      result = JSON.parse(data.choices[0]?.message?.content || '{}');
+    } catch (error) {
+      console.error("🚨 JSON Parsing Error:", error);
+      throw new Error("Failed to parse AI response.");
+    }
+
+    // ✅ Ensure response structure is valid
     return {
       summary: result.summary || '',
       keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : [],
@@ -138,7 +158,13 @@ export const analyzeTranscription = async (text: string): Promise<AnalysisRespon
       rawTranscription: text
     };
   } catch (error) {
-    console.error('Analysis error:', error);
-    throw error;
+    console.error('🚨 Analysis Error:', error);
+    return {
+      summary: 'Analysis failed.',
+      keyPoints: [],
+      topics: [],
+      rawTranscription: text,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
   }
 };
