@@ -339,15 +339,16 @@ const styles = StyleSheet.create({
 
 export default function App() {
   const initUser = useUserStore(state => state.initUser);
+  const initializePurchases = useUserStore(state => state.initializePurchases);
 
   useEffect(() => {
     const initialize = async () => {
-      // Ensure we have a user on app start
       await initUser();
+      await initializePurchases();
     };
 
     initialize();
-  }, [initUser]);
+  }, [initUser, initializePurchases]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

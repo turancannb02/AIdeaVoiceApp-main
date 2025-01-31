@@ -7,7 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserStore } from '../stores/useUserStore';
 import { UserTrackingService } from 'src/services/userTrackingService';
-
+import PurchaseService from '../services/purchaseService';
+import Purchases, { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 /* ------------------------------------------------------------------
    1) Days Remaining
 ------------------------------------------------------------------- */
@@ -177,7 +178,7 @@ const UsageStatsCard = () => {
 ------------------------------------------------------------------- */
 const SUBSCRIPTION_PLANS = [
   {
-    id: 'monthly',
+    id: 'monthly_pro',
     name: 'Monthly Plan',
     icon: '⭐️',
     bg: '#E8F5E9',
@@ -190,7 +191,7 @@ const SUBSCRIPTION_PLANS = [
     ]
   },
   {
-    id: 'sixMonth',
+    id: 'sixMonth_premium',
     name: '6-Month Plan',
     icon: '✨',
     bg: '#FFF3E0',
@@ -203,7 +204,7 @@ const SUBSCRIPTION_PLANS = [
     ]
   },
   {
-    id: 'yearly',
+    id: 'yearly_ultimate',
     name: 'Annual Plan',
     icon: '💎',
     bg: '#F3E5F5',
@@ -226,9 +227,65 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
-  const { subscription, updateSubscription } = useUserStore();
+  const { subscription, updateSubscription, purchaseSubscription, restorePurchases } = useUserStore();
   const [showPlanConfirmation, setShowPlanConfirmation] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
+
+  useEffect(() => {
+    const fetchOfferings = async () => {
+      const offerings = await PurchaseService.getOfferings();
+      setOfferings(offerings);
+    };
+    
+    if (visible) {
+      fetchOfferings();
+    }
+  }, [visible]);
+
+  const getPriceString = (planId: string) => {
+    if (!offerings) return '';
+    const purchasePackage = offerings.availablePackages.find(
+      (pkg: PurchasesPackage) => pkg.identifier === planId
+    );
+    return purchasePackage?.product.priceString || '';
+  };
+
+  const handlePlanSelect = async (planId: string) => {
+    try {
+      if (!offerings) return;
+      
+      const pkg = offerings.availablePackages.find((p: PurchasesPackage) => p.identifier === planId);
+      if (!pkg) {
+        throw new Error('Package not found');
+      }
+
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      Alert.alert(
+        'Change Plan',
+        'Are you sure you want to switch to this plan?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              try {
+                const success = await purchaseSubscription(planId);
+                if (success) {
+                  setShowPlanConfirmation(true);
+                }
+              } catch (err) {
+                Alert.alert('Error', 'Failed to complete purchase');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('handlePlanSelect error:', error);
+    }
+  };
 
   // Current Plan info
   const planInfo = (() => {
@@ -240,44 +297,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     }
   })();
 
-  const handlePlanSelect = useCallback(
-    async (planId: 'monthly' | 'sixMonth' | 'yearly') => {
-      try {
-        if (Platform.OS === 'ios') {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        }
-
-        Alert.alert(
-          'Change Plan',
-          'Are you sure you want to switch to this plan?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Confirm',
-              onPress: async () => {
-                try {
-                  setSelectedPlan(planId);
-                  const { success } = await updateSubscription(planId);
-                  if (success) {
-                    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    setShowPlanConfirmation(true);
-                  } else {
-                    Alert.alert('Error', 'Failed to update subscription');
-                  }
-                } catch (err) {
-                  console.error('Error updating subscription:', err);
-                  Alert.alert('Error', 'Failed to update subscription.');
-                }
-              }
-            }
-          ]
-        );
-      } catch (error) {
-        console.error('handlePlanSelect error:', error);
+  const handlePlanPurchase = async (planId: string) => {
+    try {
+      const success = await purchaseSubscription(planId);
+      if (success) {
+        Alert.alert('Success', 'Subscription activated!');
       }
-    },
-    [updateSubscription]
-  );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to purchase subscription');
+    }
+  };
+
+  const handleRestore = async () => {
+    try {
+      await restorePurchases();
+      Alert.alert('Success', 'Purchases restored!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to restore purchases');
+    }
+  };
 
   const navigateHome = () => {
     onClose();
@@ -427,6 +465,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                 ))}
               </LinearGradient>
             </View>
+
+            <TouchableOpacity 
+              style={styles.restoreButton}
+              onPress={handleRestore}
+            >
+              <Text style={styles.restoreButtonText}>
+                Restore Purchases
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -787,6 +834,19 @@ const styles = StyleSheet.create({
   },
   confirmationButtonText: {
     color: '#4B7BFF',
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  restoreButton: {
+    backgroundColor: '#4B7BFF',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginTop: 20
+  },
+  restoreButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600'
   }

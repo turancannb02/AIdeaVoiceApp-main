@@ -14,6 +14,7 @@ import {
 import { db } from '../config/firebaseConfig'; // <-- Use 'db' instead of 'firestore'
 import { UserTrackingService } from '../services/userTrackingService';
 import { UserAnalytics } from '../types/user';
+import PurchaseService from '../services/purchaseService';
 
 interface Subscription {
   plan: 'free' | 'monthly' | 'sixMonth' | 'yearly';
@@ -32,7 +33,7 @@ interface UsageData {
   recordings?: number;
   minutes?: number;
   transcriptions?: number;
-  aiChatsUsed?: number;
+  aiChatsUsed?: number; // Add this line
 }
 
 interface AnalyticsUpdates {
@@ -78,6 +79,10 @@ interface UserState {
 
   getAnalytics: () => UserAnalytics;
   updateAnalytics: (updates: AnalyticsUpdates) => void;
+
+  initializePurchases: () => Promise<void>;
+  purchaseSubscription: (plan: string) => Promise<boolean>;
+  restorePurchases: () => Promise<void>;
 }
 
 export const useUserStore = create<UserState>()(
@@ -192,8 +197,13 @@ export const useUserStore = create<UserState>()(
         lastActiveDate: new Date().toISOString(),
       }),
 
-      updateAnalytics: (updates) => {
-        console.log('Updating analytics:', updates);
+      updateAnalytics: async (updates: {
+        recordings?: number;
+        minutes?: number;
+        transcriptions?: number;
+        aiChatsUsed?: number; // Add this line
+      }) => {
+        // ... rest of the function
       },
 
       decrementAIChat: async () => {
@@ -237,7 +247,7 @@ export const useUserStore = create<UserState>()(
           });
 
           // Now that we have aiChatsUsed in UsageData, we can do:
-          await UserTrackingService.trackUsage(uid, { aiChatsUsed: 1 });
+            await UserTrackingService.trackUsage(uid, { aiChatsUsed: 1 } as UsageData);
 
           return {
             success: true,
@@ -336,6 +346,40 @@ export const useUserStore = create<UserState>()(
           console.error('Error syncing subscription:', error);
         }
       },
+
+      initializePurchases: async () => {
+        await PurchaseService.initialize();
+      },
+
+      purchaseSubscription: async (plan: string) => {
+        try {
+          const offerings = await PurchaseService.getOfferings();
+          if (!offerings) throw new Error('No offerings available');
+
+          const purchasePackage = offerings.availablePackages.find(
+            pkg => pkg.identifier === plan
+          );
+          if (!purchasePackage) throw new Error('Package not found');
+
+          const customerInfo = await PurchaseService.purchasePackage(purchasePackage);
+          
+          // Update local subscription state
+          await get().syncSubscription();
+          return true;
+        } catch (error) {
+          console.error('Purchase error:', error);
+          return false;
+        }
+      },
+
+      restorePurchases: async () => {
+        try {
+          await PurchaseService.restorePurchases();
+          await get().syncSubscription();
+        } catch (error) {
+          console.error('Restore error:', error);
+        }
+      }
     }),
     {
       name: 'user-store',

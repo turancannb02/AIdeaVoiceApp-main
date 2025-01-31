@@ -50,6 +50,14 @@
             "useFrameworks": "static"
           }
         }
+      ],
+      [
+        "react-native-purchases",
+        {
+          "ios": {
+            "appTrackingTransparency": true
+          }
+        }
       ]
     ],
     "newArchEnabled": true
