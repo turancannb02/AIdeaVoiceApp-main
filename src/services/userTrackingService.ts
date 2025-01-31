@@ -1,6 +1,6 @@
 // src/services/userTrackingService.ts
 
-import { auth, firestore } from '../config/firebaseConfig';
+import { auth, db } from '../config/firebaseConfig';
 import { signInAnonymously } from 'firebase/auth';
 import {
   doc,
@@ -48,7 +48,7 @@ export class UserTrackingService {
     };
 
     // Create initial user document
-    await setDoc(doc(firestore, 'users', uid), {
+    await setDoc(doc(db, 'users', uid), {
       createdAt: new Date(),
       deviceInfo,
       location: null,
@@ -82,7 +82,7 @@ export class UserTrackingService {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude
         };
-        await updateDoc(doc(firestore, 'users', uid), { location });
+        await updateDoc(doc(db, 'users', uid), { location });
       }
     } catch (error) {
       console.log('Location error:', error);
@@ -96,7 +96,7 @@ export class UserTrackingService {
     minutes?: number;
     transcriptions?: number;
   }) {
-    const userRef = doc(firestore, 'users', uid);
+    const userRef = doc(db, 'users', uid);
 
     await updateDoc(userRef, {
       'usageStats.totalRecordings': increment(data.recordings || 0),
@@ -124,7 +124,7 @@ export class UserTrackingService {
       appVersion: Constants.expoConfig?.version || '1.0.0'
     };
 
-    await addDoc(collection(firestore, 'feedback'), feedbackData);
+    await addDoc(collection(db, 'feedback'), feedbackData);
   }
 
   static async updateSubscription(
@@ -142,7 +142,7 @@ export class UserTrackingService {
     // Round up if >= 30 seconds
     const roundedMinutes = remainingSeconds >= 30 ? minutes + 1 : minutes;
 
-    await updateDoc(doc(firestore, 'users', uid), {
+    await updateDoc(doc(db, 'users', uid), {
       'usageStats.totalRecordings': increment(1),
       'usageStats.totalMinutes': increment(roundedMinutes),
       'recordingHistory': arrayUnion({
@@ -172,7 +172,7 @@ export class UserTrackingService {
       deviceType: Device.deviceType
     };
 
-    await addDoc(collection(firestore, 'userActivity'), {
+    await addDoc(collection(db, 'userActivity'), {
       uid,
       ...activity,
       deviceInfo,
@@ -182,7 +182,7 @@ export class UserTrackingService {
   }
 
   static async getUserStats(uid: string) {
-    const userDoc = await getDoc(doc(firestore, 'users', uid));
+    const userDoc = await getDoc(doc(db, 'users', uid));
     return userDoc.data()?.usageStats || {};
   }
 
@@ -215,7 +215,7 @@ export class UserTrackingService {
       const startDate = new Date();
       const endDate = new Date(startDate.getTime() + config.duration * 24 * 60 * 60 * 1000);
 
-      const userRef = doc(firestore, 'users', uid);
+      const userRef = doc(db, 'users', uid);
       
       // Update subscription directly without batch
       await updateDoc(userRef, {

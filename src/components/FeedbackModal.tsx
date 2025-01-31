@@ -1,4 +1,5 @@
 // src/components/FeedbackModal.tsx
+
 import React, { useState } from 'react';
 import { Modal, View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,8 +15,8 @@ interface FeedbackModalProps {
 export const FeedbackModal: React.FC<FeedbackModalProps> = ({ visible, onClose }) => {
   const [feedback, setFeedback] = useState('');
   const [rating, setRating] = useState(0);
-  const { uid } = useUserStore();
 
+  // We'll call useUserStore.getState() directly in handleSubmit to ensure we have the latest uid
   const ratingIcons = [
     { score: 1, icon: '😢', label: 'Poor' },
     { score: 2, icon: '😕', label: 'Fair' },
@@ -31,8 +32,15 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ visible, onClose }
     }
 
     try {
-      if (!uid) throw new Error('User not authenticated');
-      
+      // Ensure we have a user
+      let { uid, initUser } = useUserStore.getState();
+      if (!uid) {
+        await initUser();
+        uid = useUserStore.getState().uid;
+        if (!uid) throw new Error('User not authenticated (initUser failed)');
+      }
+
+      // Now submit feedback
       await UserTrackingService.submitFeedback(uid, feedback, rating);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Thank you! 🎉', 'Your feedback helps us improve AIdeaVoice.');

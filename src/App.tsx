@@ -31,42 +31,40 @@ import { useUserStore } from './stores/useUserStore';
 import { AnalyticsService } from './services/analyticsService';
 
 /* --------------------------------------------------------
-   A) Premium Badge below header text
+   A) Premium Badge
 -------------------------------------------------------- */
 const PremiumBadge = () => {
   const { subscription } = useUserStore();
 
-  // Badge config for all plans including free trial
   const badgeConfig = (() => {
     switch (subscription?.plan) {
       case 'monthly':
-        return { 
-          emoji: '⭐️', 
-          label: 'Pro Member', 
-          gradientStart: '#6B9FFF', 
-          gradientEnd: '#4B7BFF' 
+        return {
+          emoji: '⭐️',
+          label: 'Pro Member',
+          gradientStart: '#6B9FFF',
+          gradientEnd: '#4B7BFF'
         };
       case 'sixMonth':
-        return { 
-          emoji: '✨', 
-          label: 'Premium Member', 
-          gradientStart: '#FFA726', 
-          gradientEnd: '#FB8C00' 
+        return {
+          emoji: '✨',
+          label: 'Premium Member',
+          gradientStart: '#FFA726',
+          gradientEnd: '#FB8C00'
         };
       case 'yearly':
-        return { 
-          emoji: '💎', 
-          label: 'Ultimate Member', 
-          gradientStart: '#66BB6A', 
-          gradientEnd: '#4CAF50' 
+        return {
+          emoji: '💎',
+          label: 'Ultimate Member',
+          gradientStart: '#66BB6A',
+          gradientEnd: '#4CAF50'
         };
       default:
-        // Free Trial Badge
-        return { 
-          emoji: '🎁', 
-          label: 'Free Trial', 
-          gradientStart: '#FF6B98', // Soft pink start
-          gradientEnd: '#FF4081'    // Vibrant pink end
+        return {
+          emoji: '🎁',
+          label: 'Free Trial',
+          gradientStart: '#FF6B98',
+          gradientEnd: '#FF4081'
         };
     }
   })();
@@ -92,13 +90,13 @@ function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const { uid } = useUserStore();
+
+  const { uid, syncSubscription } = useUserStore();
   const { recordings, selectedFilter, setSelectedFilter, selectedRecording, setSelectedRecording, refreshRecordings, loadRecordings } = useRecordingStore();
-  const { syncSubscription } = useUserStore();
 
   useEffect(() => {
     loadRecordings();
-  }, []);
+  }, [loadRecordings]);
 
   const { 
     startRecording, 
@@ -125,13 +123,13 @@ function AppContent() {
     try {
       setRefreshing(true);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
       // Sync subscription data with Firebase
       await syncSubscription();
-      
+
       // Refresh recordings
       await refreshRecordings();
-      
+
       // Add small delay for better UX
       await new Promise(resolve => setTimeout(resolve, 800));
     } catch (error) {
@@ -141,17 +139,17 @@ function AppContent() {
     }
   }, [refreshRecordings, syncSubscription]);
 
-  // Track session
+  // Track session start/end
   useEffect(() => {
     let startTime = Date.now();
-    
+
     const trackSession = async () => {
       if (uid) {
         const sid = await AnalyticsService.trackSessionStart(uid);
         setSessionId(sid);
       }
     };
-    
+
     trackSession();
 
     return () => {
@@ -160,7 +158,7 @@ function AppContent() {
         AnalyticsService.trackSessionEnd(sessionId, duration);
       }
     };
-  }, [uid]);
+  }, [uid, sessionId]);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
@@ -169,7 +167,7 @@ function AppContent() {
   return (
     <ErrorBoundary>
       <View style={styles.container}>
-      <ScrollView
+        <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollViewContent}
           refreshControl={
@@ -195,7 +193,7 @@ function AppContent() {
               </Text>
             </View>
 
-            {/* Premium Badge - Now between header and filters */}
+            {/* Premium Badge */}
             <View style={styles.premiumBadgeContainer}>
               <PremiumBadge />
             </View>
@@ -250,9 +248,6 @@ function AppContent() {
   );
 }
 
-// --------------
-// Styles
-// --------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -263,11 +258,11 @@ const styles = StyleSheet.create({
   },
   scrollViewContent: {
     paddingHorizontal: 16,
-    paddingBottom: 100 // room for bottom buttons
+    paddingBottom: 100
   },
   header: {
     marginTop: 16,
-    marginBottom: 16 // Reduced from 24 to 16
+    marginBottom: 16
   },
   greeting: {
     fontSize: 28,
@@ -284,7 +279,7 @@ const styles = StyleSheet.create({
     marginVertical: 1,
     marginHorizontal: 1,
     alignSelf: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 8
   },
   recordingsHeader: {
     marginBottom: 12,
@@ -323,36 +318,36 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    minWidth: 120, // Ensure minimum width for better appearance
+    minWidth: 120
   },
   premiumBadgeContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center', // Center content horizontally
-    gap: 8,
+    justifyContent: 'center',
+    gap: 8
   },
   premiumBadgeEmoji: {
-    fontSize: 12,
+    fontSize: 12
   },
   premiumBadgeLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: '#fff',
-    letterSpacing: 0.3,
+    letterSpacing: 0.3
   }
 });
 
-// Main export
 export default function App() {
   const initUser = useUserStore(state => state.initUser);
 
   useEffect(() => {
     const initialize = async () => {
+      // Ensure we have a user on app start
       await initUser();
     };
-    
+
     initialize();
-  }, []);
+  }, [initUser]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

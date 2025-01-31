@@ -1,18 +1,7 @@
 // src/components/SettingsModal.tsx
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Animated } from 'react-native';
-import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  Alert,
-  Platform
-} from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Animated, SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -22,18 +11,21 @@ import { UserTrackingService } from 'src/services/userTrackingService';
 /* ------------------------------------------------------------------
    1) Days Remaining
 ------------------------------------------------------------------- */
-const getDaysRemaining = (endDate?: Date) => {
-  if (!endDate) return 0;
+const getDaysRemaining = (endDate?: Date): number => {
+  if (!endDate || !(endDate instanceof Date) || isNaN(endDate.getTime())) {
+    return 0;
+  }
+
   const now = new Date();
   const end = new Date(endDate);
-  return Math.max(
-    0,
-    Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-  );
+  const diffTime = end.getTime() - now.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  return Math.max(0, diffDays);
 };
 
 /* ------------------------------------------------------------------
-   2) Plan Confirmation Modal with onNavigateHome
+   2) Plan Confirmation Modal
 ------------------------------------------------------------------- */
 interface PlanConfirmationProps {
   visible: boolean;
@@ -119,20 +111,18 @@ const PlanConfirmationModal: React.FC<PlanConfirmationProps> = ({
 
 /* ------------------------------------------------------------------
    3) Usage Stats Card for “All Time Usage”
-   Shown between the welcome card & “Current Plan”
 ------------------------------------------------------------------- */
 const UsageStatsCard = () => {
-  const { subscription, uid } = useUserStore(); // Get uid from store
+  const { uid } = useUserStore();
   const { getUserStats } = UserTrackingService;
   const [usageStats, setUsageStats] = useState({
     totalMinutes: 0,
     totalAiChats: 0
   });
 
-  // Fetch total usage stats when component mounts
   useEffect(() => {
     const fetchStats = async () => {
-      if (!uid) return; // Check uid instead of subscription.uid
+      if (!uid) return;
       try {
         const stats = await getUserStats(uid);
         setUsageStats({
@@ -143,9 +133,8 @@ const UsageStatsCard = () => {
         console.error('Error fetching usage stats:', error);
       }
     };
-    
     fetchStats();
-  }, [uid]);
+  }, [uid, getUserStats]);
 
   return (
     <View style={styles.usageStatsCard}>
@@ -184,7 +173,7 @@ const UsageStatsCard = () => {
 };
 
 /* ------------------------------------------------------------------
-   4) Plans with Checkmarks (existing)
+   4) Plans with Checkmarks
 ------------------------------------------------------------------- */
 const SUBSCRIPTION_PLANS = [
   {
@@ -238,7 +227,19 @@ interface SettingsModalProps {
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
   const { subscription, updateSubscription } = useUserStore();
-  
+  const [showPlanConfirmation, setShowPlanConfirmation] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+
+  // Current Plan info
+  const planInfo = (() => {
+    switch (subscription?.plan) {
+      case 'monthly':  return { name: 'Monthly Plan ⭐️', color: '#4B7BFF' };
+      case 'sixMonth': return { name: '6 Months Plan ✨', color: '#FF9500' };
+      case 'yearly':   return { name: 'Annual Plan 💎', color: '#4CAF50' };
+      default:         return { name: 'Free Trial 🎁', color: '#FF6B98' };
+    }
+  })();
+
   const handlePlanSelect = useCallback(
     async (planId: 'monthly' | 'sixMonth' | 'yearly') => {
       try {
@@ -252,9 +253,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
           [
             { text: 'Cancel', style: 'cancel' },
             {
-              text: 'Confirm', 
+              text: 'Confirm',
               onPress: async () => {
                 try {
+                  setSelectedPlan(planId);
                   const { success } = await updateSubscription(planId);
                   if (success) {
                     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -277,30 +279,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     [updateSubscription]
   );
 
-  // Add useEffect to sync subscription when modal opens
-  useEffect(() => {
-    if (visible) {
-      // Add your sync logic here if needed
-    }
-  }, [visible]);
-
-  const [showPlanConfirmation, setShowPlanConfirmation] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-
-  // Current Plan info
-  const planInfo = (() => {
-    switch (subscription?.plan) {
-      case 'monthly':  return { name: 'Monthly Plan ⭐️', color: '#4B7BFF' };
-      case 'sixMonth': return { name: '6 Months Plan ✨', color: '#FF9500' };
-      case 'yearly':   return { name: 'Annual Plan 💎', color: '#4CAF50' };
-      default:         return { name: 'Free Trial 🎁', color: '#FF6B98' };
-    }
-  })();
-
-  // If yearly, we just show "Unlimited" in usage
   const navigateHome = () => {
-    onClose(); // you can do more logic if needed
+    onClose();
   };
+
+  // Sync subscription each time modal is opened, if desired
+  useEffect(() => {
+    // If you need real-time sync on open, you can do:
+    /*
+    if (visible) {
+      useUserStore.getState().syncSubscription();
+    }
+    */
+  }, [visible]);
 
   return (
     <>
@@ -361,7 +352,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                   <View style={styles.usageInfo}>
                     <Text style={styles.usageLabel}>Recording Minutes</Text>
                     <Text style={styles.usageValue}>
-                      {/* If yearly => "Unlimited", else numeric from subscription.features */}
                       {subscription?.plan === 'yearly'
                         ? 'Unlimited'
                         : subscription?.features?.recordingMinutes ?? 0} remaining
@@ -437,7 +427,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                 ))}
               </LinearGradient>
             </View>
-           
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -453,9 +442,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   );
 };
 
-/* ------------------------------------------------------------------
-   6) Styles
-------------------------------------------------------------------- */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -518,7 +504,7 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
 
-  // Usage Stats ("All Time Usage")
+  // Usage Stats
   usageStatsCard: {
     marginHorizontal: 20,
     marginVertical: 16,
@@ -529,12 +515,12 @@ const styles = StyleSheet.create({
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowRadius: 8
       },
       android: {
-        elevation: 4,
-      },
-    }),
+        elevation: 4
+      }
+    })
   },
   usageStatsGradient: {
     padding: 16
@@ -564,16 +550,16 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 8
   },
   usageEmoji: {
-    fontSize: 20,
+    fontSize: 20
   },
   usageValue: {
     fontSize: 18,
     fontWeight: '700',
     color: '#444',
-    textAlign: 'auto',
+    textAlign: 'auto'
   },
 
   sectionTitle: {
