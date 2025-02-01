@@ -48,8 +48,8 @@ export const generateAIResponse = async (prompt: string, context: string): Promi
 
     const data = await response.json();
     return data.choices[0]?.message?.content || "No response from AI.";
-  } catch (error) {
-    console.error('🚨 AI Chat Error:', error.message);
-    return "Sorry, something went wrong while processing your request. Please try again later. 😔";
+  } catch (error: unknown) {
+    console.error('🚨 AI Chat Error:', error instanceof Error ? error.message : 'Unknown error');
+    return "Sorry, something went wrong. Please try again.";
   }
 };

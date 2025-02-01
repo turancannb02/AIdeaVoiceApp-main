@@ -52,6 +52,14 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/aideavoiceapp-icon.png",
+          "color": "#4B7BFF",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ],
+      [
         "react-native-purchases",
         {
           "ios": {

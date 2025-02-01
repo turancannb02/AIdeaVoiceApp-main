@@ -15,9 +15,10 @@ import { db } from '../config/firebaseConfig'; // <-- Use 'db' instead of 'fires
 import { UserTrackingService } from '../services/userTrackingService';
 import { UserAnalytics } from '../types/user';
 import PurchaseService from '../services/purchaseService';
+import NotificationService from '../services/notificationService';
 
 interface Subscription {
-  plan: 'free' | 'monthly' | 'sixMonth' | 'yearly';
+  plan: 'free' | SubscriptionPlan;
   startDate: Date;
   endDate: Date;
   features: {
@@ -48,14 +49,20 @@ interface UserLimitChanges {
   aiChats?: number;
 }
 
+type SubscriptionPlan = 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
+
 interface UserState {
   uid: string | null;
   subscription: Subscription | null;
   userCode: string | null;
+  notificationSettings: {
+    dailyNotifications: boolean;
+    weeklyNotifications: boolean;
+  };
 
   initUser: () => Promise<void>;
   syncSubscription: () => Promise<void>;
-  updateSubscription: (planId: 'free' | 'monthly' | 'sixMonth' | 'yearly') => Promise<{ success: boolean }>;
+  updateSubscription: (plan: 'free' | SubscriptionPlan) => Promise<{ success: boolean }>;
 
   decrementAIChat: () => Promise<{
     success: boolean;
@@ -81,8 +88,13 @@ interface UserState {
   updateAnalytics: (updates: AnalyticsUpdates) => void;
 
   initializePurchases: () => Promise<void>;
-  purchaseSubscription: (plan: string) => Promise<boolean>;
+  purchaseSubscription: (plan: SubscriptionPlan) => Promise<boolean>;
   restorePurchases: () => Promise<void>;
+
+  updateNotificationSettings: (settings: {
+    dailyNotifications: boolean;
+    weeklyNotifications: boolean;
+  }) => Promise<void>;
 }
 
 export const useUserStore = create<UserState>()(
@@ -91,6 +103,10 @@ export const useUserStore = create<UserState>()(
       uid: null,
       subscription: null,
       userCode: null,
+      notificationSettings: {
+        dailyNotifications: true,
+        weeklyNotifications: true,
+      },
 
       initUser: async () => {
         try {
@@ -105,7 +121,7 @@ export const useUserStore = create<UserState>()(
         }
       },
 
-      updateSubscription: async (planId) => {
+      updateSubscription: async (planId: 'free' | SubscriptionPlan) => {
         try {
           let { uid } = get();
           if (!uid) {
@@ -197,7 +213,7 @@ export const useUserStore = create<UserState>()(
         lastActiveDate: new Date().toISOString(),
       }),
 
-      updateAnalytics: async (updates: {
+      updateAnalytics: async (updates: AnalyticsUpdates) => {
         recordings?: number;
         minutes?: number;
         transcriptions?: number;
@@ -351,7 +367,7 @@ export const useUserStore = create<UserState>()(
         await PurchaseService.initialize();
       },
 
-      purchaseSubscription: async (plan: string) => {
+      purchaseSubscription: async (plan: SubscriptionPlan) => {
         try {
           const offerings = await PurchaseService.getOfferings();
           if (!offerings) throw new Error('No offerings available');
@@ -361,9 +377,8 @@ export const useUserStore = create<UserState>()(
           );
           if (!purchasePackage) throw new Error('Package not found');
 
-          const customerInfo = await PurchaseService.purchasePackage(purchasePackage);
-          
-          // Update local subscription state
+          await PurchaseService.purchasePackage(purchasePackage);
+          await get().updateSubscription(plan);
           await get().syncSubscription();
           return true;
         } catch (error) {
@@ -379,7 +394,12 @@ export const useUserStore = create<UserState>()(
         } catch (error) {
           console.error('Restore error:', error);
         }
-      }
+      },
+
+      updateNotificationSettings: async (settings) => {
+        set({ notificationSettings: settings });
+        await NotificationService.updateNotificationSettings(settings);
+      },
     }),
     {
       name: 'user-store',

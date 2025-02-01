@@ -32,6 +32,46 @@ interface FeedbackData {
   appVersion: string;
 }
 
+interface UpdateResult {
+  success: boolean;
+  message?: string;
+}
+
+type PlanId = 'free' | 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
+
+interface PlanConfig {
+  duration: number;
+  recordingMinutes: number;
+  aiChats: number;
+  entitlement?: string;
+}
+
+const PLAN_CONFIGS: Record<PlanId, PlanConfig> = {
+  free: {
+    duration: 7,
+    recordingMinutes: 60,
+    aiChats: 3
+  },
+  monthly_pro: {
+    duration: 30,
+    recordingMinutes: 150,
+    aiChats: 20,
+    entitlement: 'monthly_pro'
+  },
+  sixMonth_premium: {
+    duration: 180,
+    recordingMinutes: 300,
+    aiChats: 40,
+    entitlement: 'sixMonth_premium'
+  },
+  yearly_ultimate: {
+    duration: 365,
+    recordingMinutes: 999999,
+    aiChats: 999999,
+    entitlement: 'yearly_ultimate'
+  }
+};
+
 export class UserTrackingService {
   static async initAnonymousUser() {
     const userCredential = await signInAnonymously(auth);
@@ -186,43 +226,26 @@ export class UserTrackingService {
     return userDoc.data()?.usageStats || {};
   }
 
-  static async updateUserPlan(uid: string, plan: 'free' | 'monthly' | 'sixMonth' | 'yearly') {
+  static async updateUserPlan(uid: string, plan: string): Promise<UpdateResult> {
     try {
-      const planConfigs = {
-        free: {
-          duration: 7,
-          recordingMinutes: 60,
-          aiChats: 3
-        },
-        monthly: {
-          duration: 30,
-          recordingMinutes: 150,
-          aiChats: 20
-        },
-        sixMonth: {
-          duration: 180,
-          recordingMinutes: 200,
-          aiChats: 40
-        },
-        yearly: {
-          duration: 365,
-          recordingMinutes: 999999,
-          aiChats: 999999
-        }
-      };
-
-      const config = planConfigs[plan];
-      const startDate = new Date();
-      const endDate = new Date(startDate.getTime() + config.duration * 24 * 60 * 60 * 1000);
-
-      const userRef = doc(db, 'users', uid);
+      const isTrial = plan.startsWith('free_trial_');
+      const actualPlan = isTrial ? plan.replace('free_trial_', '') as PlanId : plan as PlanId;
       
-      // Update subscription directly without batch
-      await updateDoc(userRef, {
+      const config = PLAN_CONFIGS[actualPlan];
+      if (!config) {
+        return { success: false, message: 'Invalid plan' };
+      }
+
+      const startDate = new Date();
+      const endDate = new Date(startDate.getTime() + (isTrial ? 7 : config.duration) * 24 * 60 * 60 * 1000);
+
+      await updateDoc(doc(db, 'users', uid), {
         subscription: {
-          plan,
+          plan: actualPlan,
           startDate,
           endDate,
+          isTrial,
+          entitlement: config.entitlement,
           features: {
             recordingMinutes: config.recordingMinutes,
             aiChatsRemaining: config.aiChats,
@@ -233,16 +256,10 @@ export class UserTrackingService {
         lastUpdated: new Date()
       });
 
-      return {
-        success: true,
-        message: `Successfully updated user plan to ${plan}`
-      };
+      return { success: true };
     } catch (error) {
       console.error('Error updating user plan:', error);
-      return {
-        success: false,
-        message: 'Failed to update user plan'
-      };
+      return { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 }

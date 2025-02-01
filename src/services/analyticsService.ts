@@ -1,6 +1,6 @@
 import { AppUser, UserAnalytics } from '../types/user';
 import { FeatureName, AnalyticsEvent } from '../types/analytics';
-import { firestore } from '../config/firebaseConfig';
+import { db } from '../config/firebaseConfig';
 import { doc, updateDoc, increment, collection, addDoc } from 'firebase/firestore';
 import * as Device from 'expo-device';
 
@@ -9,7 +9,7 @@ type ScreenName = 'home' | 'recording' | 'settings' | 'aidea' | 'transcribed' | 
 export class AnalyticsService {
   // Track session start
   static async trackSessionStart(uid: string) {
-    const sessionRef = await addDoc(collection(firestore, 'sessions'), {
+    const sessionRef = await addDoc(collection(db, 'sessions'), {
       uid,
       startTime: new Date(),
       device: {

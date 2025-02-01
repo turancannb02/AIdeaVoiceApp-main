@@ -29,6 +29,9 @@ import { RecordingsList } from './components/RecordingsList';
 import { FloatingActionButton } from './components/FloatingActionButton';
 import { useUserStore } from './stores/useUserStore';
 import { AnalyticsService } from './services/analyticsService';
+import NotificationService from './services/notificationService';
+import { OnboardingScreen } from './components/OnboardingScreen';
+import PurchaseService from './services/purchaseService';
 
 /* --------------------------------------------------------
    A) Premium Badge
@@ -88,10 +91,11 @@ const PremiumBadge = () => {
 
 function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const { uid, syncSubscription } = useUserStore();
+  const { uid, syncSubscription, subscription } = useUserStore();
   const { recordings, selectedFilter, setSelectedFilter, selectedRecording, setSelectedRecording, refreshRecordings, loadRecordings } = useRecordingStore();
 
   useEffect(() => {
@@ -160,8 +164,42 @@ function AppContent() {
     };
   }, [uid, sessionId]);
 
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      const success = await NotificationService.initialize();
+      if (success) {
+        const { notificationSettings } = useUserStore.getState();
+        await NotificationService.updateNotificationSettings(notificationSettings);
+      }
+    };
+
+    initializeNotifications();
+  }, []);
+
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      const success = await NotificationService.initialize();
+      if (success && __DEV__) {
+        console.log('Notifications initialized successfully');
+      }
+    };
+
+    initializeNotifications();
+  }, []);
+
+  // Hide onboarding if user has subscription
+  useEffect(() => {
+    if (subscription) {
+      setShowOnboarding(false);
+    }
+  }, [subscription]);
+
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  if (showOnboarding) {
+    return <OnboardingScreen />;
   }
 
   return (
@@ -339,16 +377,15 @@ const styles = StyleSheet.create({
 
 export default function App() {
   const initUser = useUserStore(state => state.initUser);
-  const initializePurchases = useUserStore(state => state.initializePurchases);
 
   useEffect(() => {
     const initialize = async () => {
       await initUser();
-      await initializePurchases();
+      await PurchaseService.initialize();
     };
 
     initialize();
-  }, [initUser, initializePurchases]);
+  }, [initUser]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

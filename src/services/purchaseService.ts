@@ -52,8 +52,8 @@ class PurchaseService {
 
   static async restorePurchases(): Promise<CustomerInfo> {
     try {
-      const customerInfo = await Purchases.restorePurchases();
-      return customerInfo;
+      const result = await Purchases.restorePurchases();
+      return result;
     } catch (error) {
       console.error('Error restoring purchases:', error);
       throw error;

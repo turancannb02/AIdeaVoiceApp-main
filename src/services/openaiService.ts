@@ -20,6 +20,7 @@ interface AnalysisResponse {
     }[];
   }[];
   rawTranscription: string;
+  error?: string;
 }
 
 // Define Topic structure

@@ -1,7 +1,7 @@
 // src/components/SettingsModal.tsx
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Animated, SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, Platform } from 'react-native';
+import { Animated, SafeAreaView, View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, Platform, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -9,6 +9,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { UserTrackingService } from 'src/services/userTrackingService';
 import PurchaseService from '../services/purchaseService';
 import Purchases, { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
+import NotificationService from '../services/notificationService';
 /* ------------------------------------------------------------------
    1) Days Remaining
 ------------------------------------------------------------------- */
@@ -179,7 +180,7 @@ const UsageStatsCard = () => {
 const SUBSCRIPTION_PLANS = [
   {
     id: 'monthly_pro',
-    name: 'Monthly Plan',
+    name: 'Pro Plan',
     icon: '⭐️',
     bg: '#E8F5E9',
     price: '€9.99 / month',
@@ -192,20 +193,20 @@ const SUBSCRIPTION_PLANS = [
   },
   {
     id: 'sixMonth_premium',
-    name: '6-Month Plan',
+    name: 'Premium Plan',
     icon: '✨',
     bg: '#FFF3E0',
     price: '€44.99 / 6 months',
     features: [
-      { text: '200 min of transcription / month', bold: true },
+      { text: '300 min of transcription / month', bold: true },
       { text: '40 AI Chats / month', bold: true },
       { text: 'Unlimited translations & replays', bold: true },
-      { text: 'Save ~25% vs. Monthly', bold: true }
+      { text: 'Save 25% vs. Monthly', bold: true }
     ]
   },
   {
     id: 'yearly_ultimate',
-    name: 'Annual Plan',
+    name: 'Ultimate Plan',
     icon: '💎',
     bg: '#F3E5F5',
     price: '€79.99 / year',
@@ -213,7 +214,7 @@ const SUBSCRIPTION_PLANS = [
       { text: 'Unlimited transcriptions', bold: true },
       { text: 'Unlimited AI Chats', bold: true },
       { text: 'Unlimited translations & replays', bold: true },
-      { text: 'Save ~33% vs. Monthly', bold: true }
+      { text: 'Save 33% vs. Monthly', bold: true }
     ]
   }
 ];
@@ -227,9 +228,9 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
-  const { subscription, updateSubscription, purchaseSubscription, restorePurchases } = useUserStore();
+  const { subscription, purchaseSubscription, restorePurchases, notificationSettings, updateNotificationSettings } = useUserStore();
   const [showPlanConfirmation, setShowPlanConfirmation] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'monthly' | 'sixMonth' | 'yearly' | null>(null);
   const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
 
   useEffect(() => {
@@ -251,20 +252,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
     return purchasePackage?.product.priceString || '';
   };
 
-  const handlePlanSelect = async (planId: string) => {
+  const handlePlanSelect = async (planId: SubscriptionPlan) => {
     try {
       if (!offerings) return;
       
-      const pkg = offerings.availablePackages.find((p: PurchasesPackage) => p.identifier === planId);
-      if (!pkg) {
-        throw new Error('Package not found');
-      }
-
+      const pkg = offerings.availablePackages.find(
+        (p: PurchasesPackage) => p.identifier === planId
+      );
+      if (!pkg) throw new Error('Package not found');
+  
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       
       Alert.alert(
-        'Change Plan',
-        'Are you sure you want to switch to this plan?',
+        'Test Purchase',
+        `Would you like to purchase ${pkg.product.priceString}?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -273,10 +274,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
               try {
                 const success = await purchaseSubscription(planId);
                 if (success) {
+                  setSelectedPlan(planId);
                   setShowPlanConfirmation(true);
+                  Alert.alert('Success', 'Test purchase completed!');
                 }
               } catch (err) {
-                Alert.alert('Error', 'Failed to complete purchase');
+                Alert.alert('Error', 'Test purchase failed');
               }
             }
           }
@@ -319,6 +322,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
 
   const navigateHome = () => {
     onClose();
+  };
+
+  const handleNotificationToggle = async (type: 'daily' | 'weekly') => {
+    try {
+      const newSettings = {
+        ...notificationSettings,
+        [type === 'daily' ? 'dailyNotifications' : 'weeklyNotifications']: 
+          !notificationSettings[type === 'daily' ? 'dailyNotifications' : 'weeklyNotifications']
+      };
+      await updateNotificationSettings(newSettings);
+      Alert.alert('Success', 'Notification settings updated');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update notification settings');
+    }
   };
 
   // Sync subscription each time modal is opened, if desired
@@ -456,7 +473,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
 
                       <TouchableOpacity
                         style={styles.selectPlanButton}
-                        onPress={() => handlePlanSelect(plan.id as any)}
+                        onPress={() => handlePlanSelect(plan.id as 'free' | 'monthly' | 'sixMonth' | 'yearly')}
                       >
                         <Text style={styles.selectPlanButtonText}>Choose</Text>
                       </TouchableOpacity>
@@ -464,6 +481,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                   </View>
                 ))}
               </LinearGradient>
+            </View>
+
+            <View style={styles.settingSection}>
+              <Text style={styles.sectionTitle}>Notifications</Text>
+              
+              <View style={styles.notificationOption}>
+                <View>
+                  <Text style={styles.optionTitle}>Daily Reminders</Text>
+                  <Text style={styles.optionDescription}>Get daily prompts to record</Text>
+                </View>
+                <Switch
+                  value={notificationSettings.dailyNotifications}
+                  onValueChange={() => handleNotificationToggle('daily')}
+                />
+              </View>
+              <View style={styles.notificationOption}>
+                <View>
+                  <Text style={styles.optionTitle}>Weekly Motivation</Text>
+                  <Text style={styles.optionDescription}>Monday morning inspiration</Text>
+                </View>
+                <Switch
+                  value={notificationSettings.weeklyNotifications}
+                  onValueChange={() => handleNotificationToggle('weekly')}
+                />
+              </View>
             </View>
 
             <TouchableOpacity 
@@ -849,5 +891,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600'
+  },
+  settingSection: {
+    marginHorizontal: 20,
+    marginBottom: 32
+  },
+  notificationOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  optionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333'
+  },
+  optionDescription: {
+    fontSize: 14,
+    color: '#666'
   }
 });
