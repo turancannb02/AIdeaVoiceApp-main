@@ -66,7 +66,7 @@ const PLAN_CONFIGS: Record<PlanId, PlanConfig> = {
   },
   yearly_ultimate: {
     duration: 365,
-    recordingMinutes: 999999,
+    recordingMinutes: 600,
     aiChats: 999999,
     entitlement: 'yearly_ultimate'
   }
@@ -169,7 +169,7 @@ export class UserTrackingService {
 
   static async updateSubscription(
     uid: string,
-    plan: 'free' | 'monthly' | 'sixMonth' | 'yearly'
+    plan: 'free' | 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate'
   ) {
     // ... if you need
   }

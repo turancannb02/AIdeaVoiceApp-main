@@ -58,14 +58,6 @@
           "color": "#4B7BFF",
           "sounds": ["./assets/notification-sound.wav"]
         }
-      ],
-      [
-        "react-native-purchases",
-        {
-          "ios": {
-            "appTrackingTransparency": true
-          }
-        }
       ]
     ],
     "newArchEnabled": true

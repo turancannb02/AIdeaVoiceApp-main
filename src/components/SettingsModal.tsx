@@ -10,6 +10,7 @@ import { UserTrackingService } from 'src/services/userTrackingService';
 import PurchaseService from '../services/purchaseService';
 import Purchases, { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 import NotificationService from '../services/notificationService';
+import type { SubscriptionPlan } from '../stores/useUserStore';
 /* ------------------------------------------------------------------
    1) Days Remaining
 ------------------------------------------------------------------- */
@@ -59,9 +60,9 @@ const PlanConfirmationModal: React.FC<PlanConfirmationProps> = ({
 
   const planName = (() => {
     switch (plan) {
-      case 'monthly':  return 'Monthly Plan ⭐️';
-      case 'sixMonth': return '6 Months Plan ✨';
-      case 'yearly':   return 'Annual Plan 💎';
+      case 'monthly_pro':  return 'Monthly Plan ⭐️';
+      case 'sixMonth_premium': return '6 Months Plan ✨';
+      case 'yearly_ultimate':   return 'Annual Plan 💎';
       default:         return 'Free Trial 🎁';
     }
   })();
@@ -227,10 +228,16 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+const PLAN_ID_TO_RC_ID: { [key: string]: string } = {
+  'monthly_pro': '$rc_monthly',
+  'sixMonth_premium': '$rc_six_month', 
+  'yearly_ultimate': '$rc_annual'
+};
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
   const { subscription, purchaseSubscription, restorePurchases, notificationSettings, updateNotificationSettings } = useUserStore();
   const [showPlanConfirmation, setShowPlanConfirmation] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<'free' | 'monthly' | 'sixMonth' | 'yearly' | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate' | null>(null);
   const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
 
   useEffect(() => {
@@ -246,40 +253,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
 
   const getPriceString = (planId: string) => {
     if (!offerings) return '';
+    const rcId = PLAN_ID_TO_RC_ID[planId];
     const purchasePackage = offerings.availablePackages.find(
-      (pkg: PurchasesPackage) => pkg.identifier === planId
+      (pkg: PurchasesPackage) => pkg.identifier === rcId
     );
     return purchasePackage?.product.priceString || '';
   };
 
   const handlePlanSelect = async (planId: SubscriptionPlan) => {
     try {
-      if (!offerings) return;
+      if (!offerings) {
+        console.log('No offerings available');
+        return;
+      }
+      
+      const rcId = PLAN_ID_TO_RC_ID[planId];
+      console.log('Looking for package:', rcId);
       
       const pkg = offerings.availablePackages.find(
-        (p: PurchasesPackage) => p.identifier === planId
+        (p: PurchasesPackage) => p.identifier === rcId
       );
-      if (!pkg) throw new Error('Package not found');
+      
+      if (!pkg) {
+        console.error('Available packages:', offerings.availablePackages.map(p => p.identifier));
+        throw new Error(`Package not found for plan: ${planId} (${rcId})`);
+      }
   
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       
       Alert.alert(
-        'Test Purchase',
+        'Purchase Plan',
         `Would you like to purchase ${pkg.product.priceString}?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Confirm',
+            text: 'Purchase',
             onPress: async () => {
               try {
                 const success = await purchaseSubscription(planId);
                 if (success) {
                   setSelectedPlan(planId);
                   setShowPlanConfirmation(true);
-                  Alert.alert('Success', 'Test purchase completed!');
                 }
               } catch (err) {
-                Alert.alert('Error', 'Test purchase failed');
+                Alert.alert('Error', 'Purchase failed');
               }
             }
           }
@@ -293,16 +310,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
   // Current Plan info
   const planInfo = (() => {
     switch (subscription?.plan) {
-      case 'monthly':  return { name: 'Monthly Plan ⭐️', color: '#4B7BFF' };
-      case 'sixMonth': return { name: '6 Months Plan ✨', color: '#FF9500' };
-      case 'yearly':   return { name: 'Annual Plan 💎', color: '#4CAF50' };
+      case 'monthly_pro':  return { name: 'Monthly Plan ⭐️', color: '#4B7BFF' };
+      case 'sixMonth_premium': return { name: '6 Months Plan ✨', color: '#FF9500' };
+      case 'yearly_ultimate':   return { name: 'Annual Plan 💎', color: '#4CAF50' };
       default:         return { name: 'Free Trial 🎁', color: '#FF6B98' };
     }
   })();
 
   const handlePlanPurchase = async (planId: string) => {
     try {
-      const success = await purchaseSubscription(planId);
+      const success = await purchaseSubscription(planId as SubscriptionPlan);
       if (success) {
         Alert.alert('Success', 'Subscription activated!');
       }
@@ -407,7 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                   <View style={styles.usageInfo}>
                     <Text style={styles.usageLabel}>Recording Minutes</Text>
                     <Text style={styles.usageValue}>
-                      {subscription?.plan === 'yearly'
+                      {subscription?.plan === 'yearly_ultimate'
                         ? 'Unlimited'
                         : subscription?.features?.recordingMinutes ?? 0} remaining
                     </Text>
@@ -418,7 +435,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                   <View style={styles.usageInfo}>
                     <Text style={styles.usageLabel}>AI Analysis Chats</Text>
                     <Text style={styles.usageValue}>
-                      {subscription?.plan === 'yearly'
+                      {subscription?.plan === 'yearly_ultimate'
                         ? 'Unlimited'
                         : subscription?.features?.aiChatsRemaining ?? 0} remaining
                     </Text>
@@ -470,13 +487,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }
                           </Text>
                         </View>
                       ))}
-
-                      <TouchableOpacity
-                        style={styles.selectPlanButton}
-                        onPress={() => handlePlanSelect(plan.id as 'free' | 'monthly' | 'sixMonth' | 'yearly')}
-                      >
-                        <Text style={styles.selectPlanButtonText}>Choose</Text>
-                      </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.selectPlanButton}
+                      onPress={() => {
+                        if (plan.id !== subscription?.plan) {  // Don't allow purchasing current plan
+                          handlePlanSelect(plan.id as SubscriptionPlan);
+                        }
+                      }}
+                      disabled={plan.id === subscription?.plan}
+                    >
+                      <Text style={styles.selectPlanButtonText}>
+                        {plan.id === subscription?.plan ? 'Current Plan' : 'Choose'}
+                      </Text>
+                    </TouchableOpacity>
                     </View>
                   </View>
                 ))}

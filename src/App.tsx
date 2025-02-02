@@ -41,21 +41,21 @@ const PremiumBadge = () => {
 
   const badgeConfig = (() => {
     switch (subscription?.plan) {
-      case 'monthly':
+      case 'monthly_pro':
         return {
           emoji: '⭐️',
           label: 'Pro Member',
           gradientStart: '#6B9FFF',
           gradientEnd: '#4B7BFF'
         };
-      case 'sixMonth':
+      case 'sixMonth_premium':
         return {
           emoji: '✨',
           label: 'Premium Member',
           gradientStart: '#FFA726',
           gradientEnd: '#FB8C00'
         };
-      case 'yearly':
+      case 'yearly_ultimate':
         return {
           emoji: '💎',
           label: 'Ultimate Member',
@@ -91,7 +91,6 @@ const PremiumBadge = () => {
 
 function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -166,7 +165,7 @@ function AppContent() {
 
   useEffect(() => {
     const initializeNotifications = async () => {
-      const success = await NotificationService.initialize();
+      const success = await NotificationService.initialize(uid);
       if (success) {
         const { notificationSettings } = useUserStore.getState();
         await NotificationService.updateNotificationSettings(notificationSettings);
@@ -174,11 +173,12 @@ function AppContent() {
     };
 
     initializeNotifications();
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
     const initializeNotifications = async () => {
-      const success = await NotificationService.initialize();
+      const { uid } = useUserStore.getState();
+      const success = await NotificationService.initialize(uid);
       if (success && __DEV__) {
         console.log('Notifications initialized successfully');
       }
@@ -187,19 +187,12 @@ function AppContent() {
     initializeNotifications();
   }, []);
 
-  // Hide onboarding if user has subscription
-  useEffect(() => {
-    if (subscription) {
-      setShowOnboarding(false);
-    }
-  }, [subscription]);
+  const showPaywall = async () => {
+    await PurchaseService.showPaywall();
+  };
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
-  }
-
-  if (showOnboarding) {
-    return <OnboardingScreen />;
   }
 
   return (
@@ -381,9 +374,8 @@ export default function App() {
   useEffect(() => {
     const initialize = async () => {
       await initUser();
-      await PurchaseService.initialize();
+      await PurchaseService.initialize(); // Must complete before showing paywall
     };
-
     initialize();
   }, [initUser]);
 

@@ -54,11 +54,11 @@ const BasicSettingsModal: React.FC<{
 
   const planLabel = (() => {
     switch (subscription?.plan) {
-      case 'monthly':
+      case 'monthly_pro':
         return 'Monthly Plan ⭐️';
-      case 'sixMonth':
+      case 'sixMonth_premium':
         return '6 Months Plan ✨';
-      case 'yearly':
+      case 'yearly_ultimate':
         return 'Annual Plan 💎';
       default:
         return 'Free Trial 🎁';
@@ -430,13 +430,14 @@ export const FloatingActionButton = () => {
       color: '#795548',
       onPress: () => setShowBasicSettings(true)
     },
-    {
+/*    {
       id: 'stats',
       icon: 'stats-chart',
       label: 'Stats',
       color: '#9C27B0',
       onPress: () => console.log('Stats pressed')
     },
+    */
     {
       id: 'help',
       icon: 'help-circle-outline',

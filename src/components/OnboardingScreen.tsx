@@ -7,12 +7,14 @@ import {
   TouchableOpacity, 
   ScrollView, 
   Alert,
-  Platform 
+  Platform,
+  ActivityIndicator 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '../stores/useUserStore';
 import * as Haptics from 'expo-haptics';
+import PurchaseService from '../services/purchaseService';
 
 const FEATURES = [
   {
@@ -94,19 +96,23 @@ type TrialPlanId = 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
 export const OnboardingScreen = () => {
   const [selectedPlan, setSelectedPlan] = useState<'free_trial_monthly_pro' | 'free_trial_sixMonth_premium' | 'free_trial_yearly_ultimate'>('free_trial_yearly_ultimate');
   const { purchaseSubscription, restorePurchases } = useUserStore();
+  const [isLoading, setIsLoading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
 
   const handleStartTrial = async () => {
     try {
-      const planId = selectedPlan.replace('free_trial_', '') as TrialPlanId;
-      const success = await purchaseSubscription(planId);
-      if (success) {
+      setIsLoading(true);
+      const result = await PurchaseService.showPaywall();
+      if (result.success) {
         Alert.alert(
           'Welcome to AIdeaVoice! 🎉',
-          'Your free trial has started. Enjoy all premium features!'
+          'Your subscription has started. Enjoy all premium features!'
         );
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to start trial');
+      console.error('Paywall error:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -121,6 +127,14 @@ export const OnboardingScreen = () => {
 
   return (
     <View style={styles.container}>
+      {/* Add close button */}
+      <TouchableOpacity 
+        style={styles.closeButton}
+        onPress={() => setShowOnboarding(false)}
+      >
+        <Ionicons name="close" size={24} color="#fff" />
+      </TouchableOpacity>
+
       <ScrollView style={styles.content}>
         {/* Header */}
         <LinearGradient
@@ -178,10 +192,18 @@ export const OnboardingScreen = () => {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={styles.startTrialButton}
+            style={[
+              styles.startTrialButton,
+              isLoading && styles.startTrialButtonDisabled
+            ]}
             onPress={handleStartTrial}
+            disabled={isLoading}
           >
-            <Text style={styles.startTrialText}>Start Free Trial</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.startTrialText}>Start Free Trial</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -273,44 +295,61 @@ const styles = StyleSheet.create({
     color: '#666'
   },
   plansContainer: {
-    padding: 20,
-    gap: 16
+    padding: 16,
+    flexDirection: 'row', // Change to row layout
+    gap: 8, // Reduce gap between cards
   },
   planCard: {
-    borderRadius: 16,
-    overflow: 'hidden'
+    flex: 1, // Each card takes equal width
+    borderRadius: 12, // Slightly smaller radius
+    overflow: 'hidden',
+    maxWidth: '32%', // Limit width to fit three cards
   },
   selectedPlan: {
-    transform: [{ scale: 1.02 }]
+    transform: [{ scale: 1.02 }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
   planGradient: {
-    padding: 20,
-    alignItems: 'center'
+    padding: 12, // Reduce padding
+    alignItems: 'center',
+    minHeight: 140, // Set minimum height
   },
   planIcon: {
-    fontSize: 32,
-    marginBottom: 8
+    fontSize: 24, // Smaller icon
+    marginBottom: 4,
   },
   planName: {
-    fontSize: 20,
+    fontSize: 14, // Smaller font
     fontWeight: '700',
     color: '#fff',
-    marginBottom: 4
+    marginBottom: 2,
+    textAlign: 'center',
   },
   planPrice: {
-    fontSize: 16,
+    fontSize: 13, // Smaller font
     color: '#fff',
-    marginBottom: 4
+    marginBottom: 2,
+    textAlign: 'center',
   },
   trialText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)'
+    fontSize: 12, // Smaller font
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
   },
   savingsText: {
-    fontSize: 14,
+    fontSize: 11, // Smaller font
     color: '#fff',
     fontWeight: '600',
-    marginTop: 4
+    marginTop: 2,
+    textAlign: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   actionButtons: {
     padding: 20,
@@ -321,6 +360,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center'
+  },
+  startTrialButtonDisabled: {
+    opacity: 0.7
   },
   startTrialText: {
     color: '#fff',
@@ -348,5 +390,14 @@ const styles = StyleSheet.create({
   },
   termsDivider: {
     color: '#666'
+  },
+  closeButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    right: 20,
+    zIndex: 1,
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 20,
   }
 });

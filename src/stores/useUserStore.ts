@@ -7,15 +7,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   doc,
   updateDoc,
-  increment,
   getDoc,
 } from 'firebase/firestore';
 
 import { db } from '../config/firebaseConfig'; // <-- Use 'db' instead of 'firestore'
 import { UserTrackingService } from '../services/userTrackingService';
 import { UserAnalytics } from '../types/user';
-import PurchaseService from '../services/purchaseService';
+import PurchaseService, { PLAN_TO_PACKAGE_MAP } from '../services/purchaseService';
 import NotificationService from '../services/notificationService';
+
+export type SubscriptionPlan = 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
 
 interface Subscription {
   plan: 'free' | SubscriptionPlan;
@@ -29,12 +30,12 @@ interface Subscription {
   };
 }
 
-// 1) Add aiChatsUsed here
+// Added aiChatsUsed to the usage data
 interface UsageData {
   recordings?: number;
   minutes?: number;
   transcriptions?: number;
-  aiChatsUsed?: number; // Add this line
+  aiChatsUsed?: number;
 }
 
 interface AnalyticsUpdates {
@@ -49,7 +50,6 @@ interface UserLimitChanges {
   aiChats?: number;
 }
 
-type SubscriptionPlan = 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
 
 interface UserState {
   uid: string | null;
@@ -68,7 +68,7 @@ interface UserState {
     success: boolean;
     remainingChats: number | 'unlimited';
     shouldUpgrade: boolean;
-    suggestedPlan?: 'monthly' | 'sixMonth' | 'yearly';
+    suggestedPlan?: 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate';
   }>;
 
   generateUserCode: () => Promise<string>;
@@ -85,7 +85,7 @@ interface UserState {
   };
 
   getAnalytics: () => UserAnalytics;
-  updateAnalytics: (updates: AnalyticsUpdates) => void;
+  updateAnalytics: (updates: AnalyticsUpdates) => Promise<void>;
 
   initializePurchases: () => Promise<void>;
   purchaseSubscription: (plan: SubscriptionPlan) => Promise<boolean>;
@@ -135,6 +135,11 @@ export const useUserStore = create<UserState>()(
           const result = await UserTrackingService.updateUserPlan(uid, planId);
           if (!result.success) {
             throw new Error(result.message);
+          }
+
+          const success = await get().purchaseSubscription(planId as SubscriptionPlan);
+          if (!success) {
+            throw new Error('Purchase failed');
           }
 
           await get().syncSubscription();
@@ -194,7 +199,7 @@ export const useUserStore = create<UserState>()(
         if (!subscription) {
           return { recordingMinutes: 0, aiChats: 0 };
         }
-        if (subscription.plan === 'yearly') {
+        if (subscription.plan === 'yearly_ultimate') {
           return {
             recordingMinutes: 'unlimited',
             aiChats: 'unlimited',
@@ -214,12 +219,9 @@ export const useUserStore = create<UserState>()(
       }),
 
       updateAnalytics: async (updates: AnalyticsUpdates) => {
-        recordings?: number;
-        minutes?: number;
-        transcriptions?: number;
-        aiChatsUsed?: number; // Add this line
-      }) => {
-        // ... rest of the function
+        // Implement your analytics update logic here.
+        // For example, update local state or send data to a backend service.
+        console.log('Updating analytics:', updates);
       },
 
       decrementAIChat: async () => {
@@ -229,7 +231,7 @@ export const useUserStore = create<UserState>()(
         }
 
         // Yearly plan has unlimited chats
-        if (subscription.plan === 'yearly') {
+        if (subscription.plan === 'yearly_ultimate') {
           return {
             success: true,
             remainingChats: 'unlimited',
@@ -244,7 +246,7 @@ export const useUserStore = create<UserState>()(
               success: false,
               remainingChats: 0,
               shouldUpgrade: true,
-              suggestedPlan: subscription.plan === 'monthly' ? 'sixMonth' : 'yearly',
+              suggestedPlan: subscription.plan === 'monthly_pro' ? 'sixMonth_premium' : 'yearly_ultimate',
             };
           }
 
@@ -262,14 +264,14 @@ export const useUserStore = create<UserState>()(
             },
           });
 
-          // Now that we have aiChatsUsed in UsageData, we can do:
-            await UserTrackingService.trackUsage(uid, { aiChatsUsed: 1 } as UsageData);
+          // Track AI chat usage
+          await UserTrackingService.trackUsage(uid, { aiChatsUsed: 1 } as UsageData);
 
           return {
             success: true,
             remainingChats: newCount,
             shouldUpgrade: newCount < 3,
-            suggestedPlan: subscription.plan === 'monthly' ? 'sixMonth' : 'yearly',
+            suggestedPlan: subscription.plan === 'monthly_pro' ? 'sixMonth_premium' : 'yearly_ultimate',
           };
         } catch (error) {
           console.error('Error decrementing AI chat:', error);
@@ -320,7 +322,8 @@ export const useUserStore = create<UserState>()(
 
         const startDate = new Date(subscription.startDate);
         const now = new Date();
-        const daysLeft = 7 - Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        const daysLeft =
+          7 - Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
         const recordingUsage = ((60 - subscription.features.recordingMinutes) / 60) * 100;
         const chatUsage = ((3 - subscription.features.aiChatsRemaining) / 3) * 100;
@@ -340,7 +343,9 @@ export const useUserStore = create<UserState>()(
             await get().initUser();
             uid = get().uid;
             if (!uid) {
-              console.error('No user ID found after initUser attempt, skipping syncSubscription');
+              console.error(
+                'No user ID found after initUser attempt, skipping syncSubscription'
+              );
               return;
             }
           }
@@ -372,12 +377,18 @@ export const useUserStore = create<UserState>()(
           const offerings = await PurchaseService.getOfferings();
           if (!offerings) throw new Error('No offerings available');
 
+          // Get the RevenueCat package ID for this plan
+          const rcPackageId = PLAN_TO_PACKAGE_MAP[plan];
+          if (!rcPackageId) throw new Error('Invalid plan ID');
+
+          // Find the package
           const purchasePackage = offerings.availablePackages.find(
-            pkg => pkg.identifier === plan
+            (pkg) => pkg.identifier === rcPackageId
           );
           if (!purchasePackage) throw new Error('Package not found');
 
-          await PurchaseService.purchasePackage(purchasePackage);
+          // Pass the plan ID instead of package object
+          await PurchaseService.purchasePackage(plan);
           await get().updateSubscription(plan);
           await get().syncSubscription();
           return true;
@@ -403,7 +414,6 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: 'user-store',
-      // Change from getStorage -> storage
       storage: createJSONStorage(() => AsyncStorage),
     }
   )

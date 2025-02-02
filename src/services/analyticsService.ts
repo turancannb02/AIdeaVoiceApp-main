@@ -24,7 +24,7 @@ export class AnalyticsService {
 
   // Track session end
   static async trackSessionEnd(sessionId: string, duration: number) {
-    const sessionRef = doc(firestore, 'sessions', sessionId);
+    const sessionRef = doc(db, 'sessions', sessionId);
     await updateDoc(sessionRef, {
       endTime: new Date(),
       duration,
@@ -34,7 +34,7 @@ export class AnalyticsService {
 
   // Track screen views
   static async trackScreenView(uid: string, screenName: ScreenName, duration?: number) {
-    await addDoc(collection(firestore, 'screenViews'), {
+    await addDoc(collection(db, 'screenViews'), {
       uid,
       screenName,
       timestamp: new Date(),
@@ -48,7 +48,7 @@ export class AnalyticsService {
 
   // Track feature usage
   static async trackFeatureUse(uid: string, feature: FeatureName, metadata?: Record<string, any>) {
-    await addDoc(collection(firestore, 'featureUsage'), {
+    await addDoc(collection(db, 'featureUsage'), {
       uid,
       feature,
       timestamp: new Date(),
@@ -60,7 +60,7 @@ export class AnalyticsService {
     });
 
     // Update aggregate stats
-    await updateDoc(doc(firestore, 'users', uid), {
+    await updateDoc(doc(db, 'users', uid), {
       [`stats.${feature}Usage`]: increment(1),
       [`stats.last${feature.charAt(0).toUpperCase() + feature.slice(1)}Use`]: new Date()
     });
@@ -68,7 +68,7 @@ export class AnalyticsService {
 
   // Track performance metrics
   static async trackPerformance(uid: string, feature: FeatureName, duration: number) {
-    await addDoc(collection(firestore, 'performance'), {
+    await addDoc(collection(db, 'performance'), {
       uid,
       feature,
       duration,
@@ -84,7 +84,7 @@ export class AnalyticsService {
 
   // Track errors
   static async trackError(uid: string, error: Error, context: Record<string, any>) {
-    await addDoc(collection(firestore, 'errors'), {
+    await addDoc(collection(db, 'errors'), {
       uid,
       errorMessage: error.message,
       errorStack: error.stack,
@@ -101,7 +101,7 @@ export class AnalyticsService {
 
   // Track user flow
   static async trackUserFlow(uid: string, fromScreen: ScreenName, toScreen: ScreenName) {
-    await addDoc(collection(firestore, 'userFlows'), {
+    await addDoc(collection(db, 'userFlows'), {
       uid,
       fromScreen,
       toScreen,

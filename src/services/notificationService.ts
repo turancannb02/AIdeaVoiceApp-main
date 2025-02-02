@@ -4,7 +4,6 @@ import { Platform } from 'react-native';
 import { NotificationTriggerInput, SchedulableTriggerInputTypes } from 'expo-notifications';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebaseConfig';
-import { useUserStore } from '../stores/useUserStore';
 
 const MORNING_NOTIFICATIONS = [
   {
@@ -53,15 +52,13 @@ const AFTERNOON_NOTIFICATIONS = [
 ];
 
 class NotificationService {
-  static async initialize() {
+  static async initialize(uid: string | null) {
     try {
       if (!Device.isDevice) {
         console.log('Must use physical device for Push Notifications');
         return false;
       }
 
-      // Get user ID from store
-      const { uid } = useUserStore.getState();
       if (!uid) {
         console.log('No user ID found for notification tracking');
         return false;

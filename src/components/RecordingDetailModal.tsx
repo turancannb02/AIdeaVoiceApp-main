@@ -48,7 +48,7 @@ interface Props {
   recording: Recording;
   visible: boolean;
   onClose: () => void;
-  showSubscriptionModal?: (plan: 'monthly' | 'sixMonth' | 'yearly') => void;
+  showSubscriptionModal?: (plan: 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate') => void;
 }
 
 /** Chat message shape */
@@ -110,7 +110,7 @@ export const RecordingDetailModal: React.FC<Props> = ({
     recording?.categories?.[0] || 'note'
   );
 
-  const handleShowSubscription = (plan: 'monthly' | 'sixMonth' | 'yearly') => {
+  const handleShowSubscription = (plan: 'monthly_pro' | 'sixMonth_premium' | 'yearly_ultimate') => {
     if (showSubscriptionModal) {
       showSubscriptionModal(plan);
     }
@@ -320,14 +320,14 @@ export const RecordingDetailModal: React.FC<Props> = ({
         // Show upgrade modal
         Alert.alert(
           'AI Chat Limit Reached',
-          suggestedPlan === 'yearly' 
+          suggestedPlan === 'yearly_ultimate' 
             ? 'Upgrade to our Annual Plan for unlimited AI chats! 🚀'
             : 'Upgrade to our 6-Month Plan for more AI chats at a better value! ✨',
           [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'View Plans',
-              onPress: () => handleShowSubscription(suggestedPlan || 'monthly')
+              onPress: () => handleShowSubscription(suggestedPlan || 'monthly_pro')
             }
           ]
         );
@@ -363,7 +363,7 @@ export const RecordingDetailModal: React.FC<Props> = ({
             { text: 'Later', style: 'cancel' },
             {
               text: 'View Plans',
-              onPress: () => handleShowSubscription(suggestedPlan || 'monthly')
+              onPress: () => handleShowSubscription(suggestedPlan || 'monthly_pro')
             }
           ]
         );
