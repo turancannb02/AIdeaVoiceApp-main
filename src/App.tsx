@@ -370,14 +370,16 @@ const styles = StyleSheet.create({
 
 export default function App() {
   const initUser = useUserStore(state => state.initUser);
+  const syncSubscription = useUserStore(state => state.syncSubscription);
 
   useEffect(() => {
     const initialize = async () => {
       await initUser();
-      await PurchaseService.initialize(); // Must complete before showing paywall
+      await PurchaseService.initialize();
+      await syncSubscription(); // Add this
     };
     initialize();
-  }, [initUser]);
+  }, [initUser, syncSubscription]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

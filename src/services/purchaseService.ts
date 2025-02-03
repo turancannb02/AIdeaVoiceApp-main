@@ -65,9 +65,7 @@ class PurchaseService {
 
     try {
       const offerings = await Purchases.getOfferings();
-      if (offerings?.current?.availablePackages) {
-        console.log('Available packages:', offerings.current.availablePackages.map(pkg => pkg.identifier));
-      }
+      console.log('RevenueCat offerings:', offerings.current?.availablePackages);
       return offerings.current;
     } catch (error) {
       console.error('Error getting offerings:', error);
@@ -137,6 +135,10 @@ class PurchaseService {
    * Shows the paywall and attempts to purchase the monthly package.
    */
   static async showPaywall(): Promise<{ success: boolean }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
     try {
       const offerings = await this.getOfferings();
       if (!offerings) throw new Error('No offerings available');
@@ -147,6 +149,7 @@ class PurchaseService {
       
       if (!monthlyPackage) throw new Error('Monthly package not available');
       
+      console.log('Showing paywall with package:', monthlyPackage.identifier);
       const { customerInfo } = await Purchases.purchasePackage(monthlyPackage);
       return { success: Boolean(customerInfo.entitlements.active) };
     } catch (error: any) {
